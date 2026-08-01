@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Dearly</string>
+    <string name="welcome_message">Chào mừng bạn đến với Dearly</string>
+    <string name="speak_button_text">NÓI CHUYỆN</string>
+</resources>
