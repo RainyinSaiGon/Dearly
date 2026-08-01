@@ -122,11 +122,11 @@ jobs:
           cache: 'pip'
           cache-dependency-path: ai-service/requirements.txt
 
-      - name: Install Dependencies, Ruff & Pytest
+      - name: Install Dependencies, Setuptools, Ruff & Pytest
         run: |
           cd ai-service
           python -m pip install --upgrade pip
-          pip install ruff pytest
+          pip install setuptools ruff pytest
           pip install -r requirements.txt
 
       - name: Run Ruff Lint

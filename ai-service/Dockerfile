@@ -11,6 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Pre-install pip & setuptools for build-isolation wheel builds (openai-whisper)
+RUN pip install --no-cache-dir --upgrade pip setuptools
+
 # Install Python deps
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

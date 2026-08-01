@@ -1,9 +1,10 @@
-# Dearly AI Service — Python dependencies
-
 # Web framework
 fastapi==0.115.0
 uvicorn[standard]==0.30.0
 python-multipart==0.0.9
+
+# Build utilities
+setuptools
 
 # Speaker embedding (ECAPA-TDNN)
 speechbrain==1.0.0
@@ -11,7 +12,7 @@ torch>=2.1.0
 torchaudio>=2.1.0
 
 # ASR
-openai-whisper==20240930
+openai-whisper
 
 # LLM
 openai>=1.40.0
