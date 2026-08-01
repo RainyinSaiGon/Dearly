@@ -1,0 +1,24 @@
+# Dearly AI Service — Python dependencies
+
+# Web framework
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+python-multipart==0.0.9
+
+# Speaker embedding (ECAPA-TDNN)
+speechbrain==1.0.0
+torch>=2.1.0
+torchaudio>=2.1.0
+
+# ASR
+openai-whisper==20240930
+
+# LLM
+openai>=1.40.0
+
+# TTS
+google-cloud-texttospeech>=2.16.0
+
+# Utilities
+numpy>=1.26.0
+python-dotenv>=1.0.0
