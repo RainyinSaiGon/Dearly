@@ -1,0 +1,518 @@
+# Dearly — Technical Specification
+
+> **Version**: 0.3 — FINAL (all decisions confirmed)  
+> **Created**: 2026-08-01 · **Updated**: 2026-08-01  
+> **Stack**: Android (Kotlin + Jetpack Compose) · Backend (Golang) · AI (ECAPA-TDNN SV/SID + OpenAI LLM)  
+> **Deadline**: Friday, 28 August 2026
+
+---
+
+## 1. Project Overview
+
+**Dearly** is an elder-care mobile application designed to support elderly users and their caregivers. The app simplifies daily life for seniors through large-button UI, voice interaction, medication reminders, call management, and caregiver coordination — all secured by speaker verification.
+
+The app satisfies the academic project requirements:
+- **Requirement 1**: Train/evaluate a speaker verification (SV) or speaker identification (SID) model.
+- **Requirement 2**: Integrate that model into a complete, voice-driven virtual assistant with SV-protected and SID-personalized functions.
+
+---
+
+## 2. Target Users
+
+| Role | Description |
+|------|-------------|
+| **Elder (Primary User)** | 60+ years old. Minimal tech literacy. Uses large-text UI, voice commands, and simplified navigation. |
+| **Caregiver** | Family member or professional. Sets up the elder's profile, manages contacts, medications, and monitors activity. |
+
+---
+
+## 3. Tech Stack
+
+### 3.1 Mobile (Android)
+
+| Layer | Technology |
+|-------|-----------|
+| Language | Kotlin |
+| UI Framework | Jetpack Compose |
+| Navigation | Navigation Compose |
+| State Management | ViewModel + StateFlow / UiState pattern |
+| Dependency Injection | Hilt |
+| Networking | Retrofit + OkHttp |
+| Local Storage | Room (offline cache) |
+| Audio Recording | Android AudioRecord / MediaRecorder API |
+| Authentication | Firebase Auth (Phone OTP + Google Sign-In) |
+| Push Notifications | Firebase Cloud Messaging (FCM) |
+
+### 3.2 Backend (Golang)
+
+| Layer | Technology |
+|-------|-----------|
+| Language | Go 1.22+ |
+| Framework | Gin or Fiber |
+| Database | PostgreSQL (primary) |
+| Cache | Redis |
+| Auth | JWT + Firebase Admin SDK |
+| OTP | Firebase Phone Auth (server-side validation) |
+| Voice Processing | Python microservice (called via gRPC or REST) |
+| AI Orchestration | LLM-based intent + task routing |
+| File Storage | Google Cloud Storage (voice samples, profile images) |
+| Notification | FCM via Firebase Admin SDK |
+
+### 3.3 AI / Voice Pipeline
+
+| Component | Detail |
+|-----------|--------|
+| Speaker Verification (SV) | **ECAPA-TDNN** — pretrained on **VoxCeleb2** (SpeechBrain checkpoint), fine-tuned on **VoxVietnam** or **Vietnam-Celeb** |
+| Speaker Identification (SID) | Same ECAPA-TDNN embedding + cosine similarity matching across enrolled profiles |
+| ASR | **Whisper** (multilingual, Vietnamese + English) or Google Cloud STT |
+| NLP / Intent | **OpenAI GPT-4o** (function-calling for task routing) |
+| TTS | Google Cloud Text-to-Speech (Vietnamese voice, `vi-VN-Wavenet`) |
+| Wake Word | On-device wake-word engine (e.g., Porcupine or custom) — triggers outside the app |
+
+---
+
+## 4. System Architecture
+
+```
++-------------------------------------+
+|          Android App (Kotlin)        |
+|  +--------+ +--------+ +---------+  |
+|  | Auth   | | Elder  | |Caregiver|  |
+|  | Module | | UI     | | Setup   |  |
+|  +--------+ +--------+ +---------+  |
++------------------+------------------+
+                   | HTTPS / REST
+                   v
++-------------------------------------+
+|        Golang API Server             |
+|  +-------------------------------+  |
+|  |  Auth  | User  | Caregiver   |  |
+|  |  API   | API   | API         |  |
+|  +-------------------------------+  |
+|  |  Voice | Med   | Notification|  |
+|  |  API   | API   | API         |  |
+|  +-------------------------------+  |
+|         | gRPC/REST                  |
+|         v                            |
+|  +-----------------------------+    |
+|  |    Python AI Microservice    |    |
+|  |  +------+ +-----+ +------+ |    |
+|  |  |  SV  | | SID | | ASR  | |    |
+|  |  +------+ +-----+ +------+ |    |
+|  |  +----------------------+   |    |
+|  |  |  LLM Orchestrator    |   |    |
+|  |  |  (Intent + Response) |   |    |
+|  |  +----------------------+   |    |
+|  |  +------+                   |    |
+|  |  | TTS  |                   |    |
+|  |  +------+                   |    |
+|  +-----------------------------+    |
+|         |                            |
+|  +--------------+  +-------------+  |
+|  |  PostgreSQL  |  |    Redis    |  |
+|  +--------------+  +-------------+  |
++-------------------------------------+
+```
+
+---
+
+## 5. Voice Assistant Pipeline
+
+```
+Speech Input (AudioRecord)
+        |
+        v
+  Upload audio to backend
+        |
+        v
+  ASR (Speech -> Text)
+        |
+        v
+  Request Analysis & Task Orchestration (LLM)
+        |
+        +--- General task (no auth required)
+        |         +---> Execute -> TTS -> Voice Response
+        |
+        +--- Protected task -> Speaker Verification (SV)
+        |         +-- PASS -> Execute -> TTS -> Voice Response
+        |         +-- FAIL -> "Xac minh giong noi that bai" -> TTS
+        |
+        +--- Personalized task -> Speaker Identification (SID)
+                  +-- Match user -> Personalized Execute -> TTS -> Voice Response
+```
+
+---
+
+## 6. Feature Modules
+
+### 6.1 Authentication & Onboarding
+
+#### 6.1.1 Sign Up with Phone Number
+- Enter phone number (Vietnamese format: 0xxxxxxxxx)
+- Receive OTP via SMS (Firebase Phone Auth)
+- Enter OTP to verify
+- Create profile (name, age, avatar)
+- Select role: **Elder (Nguoi duoc cham soc)** or **Caregiver (Nguoi cham soc)**
+
+#### 6.1.2 Sign Up with Google
+- OAuth 2.0 via Google Sign-In SDK
+- On first login: collect phone number → OTP verification
+- Select role (same as above)
+
+#### 6.1.3 Sign In
+- Phone number + OTP
+- Google Sign-In
+- Persistent session via JWT stored in Encrypted SharedPreferences
+
+#### 6.1.4 OTP Verification Screen
+- 6-digit OTP input (large digits, elder-friendly)
+- Auto-fill support
+- Resend OTP timer (60s countdown)
+- Error state with clear message
+
+---
+
+### 6.2 Caregiver Setup Service
+
+The caregiver configures the elder's environment through a dedicated setup flow:
+
+#### 6.2.1 Elder Profile Setup
+- Assign elder name, age, city
+- Health status indicator (Normal / Warning / Critical)
+
+#### 6.2.2 Contact Management (Danh sach goi)
+- Add contacts with nickname (e.g., "con Lan", "thang Ti")
+- Assign relationship tag (Con trai, Con gai, Ban be, Hang xom, etc.)
+- Assign call method (Zalo Video Call / Phone)
+- Large-format contact cards for elder readability
+
+#### 6.2.3 Medication Schedule (Lich thuoc)
+- Add medications with dose frequency (2x/day, 3x/day, etc.)
+- Set specific time slots per dose
+- Push notification reminder sent to elder's device at medication time
+- Elder marks doses as taken (Done / Not yet)
+
+#### 6.2.4 Activity Dashboard (Hoat dong)
+- Call log: incoming/outgoing with duration and contact name
+- Medication compliance summary
+- Health status badge
+
+---
+
+### 6.3 Voice Assistant Service
+
+> Core academic requirement: integrates SV + SID + ASR + LLM + TTS
+
+#### 6.3.1 Invocation — Dual Mode
+
+**Mode A — In-App Tap:**
+- Elder taps large **"Speak" button** on main screen
+- App records audio (up to 30s, auto-stop on silence)
+- Waveform animation shown during recording
+
+**Mode B — Wake Word ("Hey Dearly"):**
+- Always-on background service listens for wake word
+- Works even when app is minimized or screen is off
+- On detection: screen lights up, mic activates, full-screen overlay appears
+- Uses on-device wake-word engine (Porcupine or Android SpeechRecognizer hotword) — no audio sent to server until wake word confirmed
+
+#### 6.3.2 General Functions (No Authentication Required)
+- Ask for current time / date
+- Ask about weather
+- Read out upcoming medication schedule
+- Read out today's call log
+- Play a greeting / friendly conversation
+
+#### 6.3.3 Protected Functions (Require Speaker Verification)
+- Initiate a phone/video call to a contact
+- Confirm medication as taken
+- Change personal settings (volume, language, theme)
+
+**SV Flow**:
+1. System detects protected intent via OpenAI function-calling
+2. TTS prompt: *"Hãy nói một câu để xác minh giọng nói của bạn"*
+3. Elder speaks passphrase (same fixed phrase used at enrollment)
+4. ECAPA-TDNN extracts embedding; cosine similarity vs. stored enrollment vector
+5. Threshold **≥ 0.80** (lenient for elderly voices): PASS → execute | FAIL → friendly TTS error + retry once
+
+#### 6.3.4 Personalized Functions (Speaker Identification)
+- Greet user by name on voice activation
+- Read personalized medication list
+- Recall last conversation context
+
+**SID Flow**:
+1. Audio embedding extracted from voice input
+2. Matched against enrolled speaker profiles in DB
+3. Identified user -> personalized response generated by LLM
+
+#### 6.3.5 Speaker Enrollment
+- Triggered during initial onboarding: **caregiver sets up directly on the elder's device**
+- Elder repeats **5 fixed Vietnamese phrases** (shown on screen in large text)
+- Audio sent to backend → ECAPA-TDNN computes embedding per phrase → average embedding stored in DB
+- Raw audio is discarded after embedding is computed
+- Enrollment can be re-triggered anytime from Settings → Security
+- Caregiver can manage **multiple elder accounts** on one device (switched via account selector)
+
+---
+
+### 6.4 Settings (Cai dat)
+
+- Edit profile (name, phone, avatar)
+- Account settings
+- Notification preferences
+- Security (re-enroll voice, change password)
+- Language (Vietnamese / English)
+- Support / Help
+- Sign out
+
+> **Medication snooze**: Elder can dismiss or snooze (10 min) a medication reminder directly from the **Android notification shade** via action buttons, without opening the app.
+
+---
+
+## 7. Screen Inventory
+
+| Screen | Role | Description |
+|--------|------|-------------|
+| Splash / Onboarding | Both | App intro, role selection |
+| Sign Up - Phone | Both | Phone number entry |
+| OTP Verification | Both | 6-digit OTP input |
+| Sign Up - Google | Both | Google OAuth redirect |
+| Role Selection | Both | Elder / Caregiver picker |
+| Profile Setup | Both | Name, age, avatar |
+| Voice Enrollment | Elder | Record 5 phrases for SV/SID |
+| Home - Elder (Hoat dong) | Elder | Dashboard: calls, meds, status |
+| Call List (Goi dien) | Elder | Contact list with tap-to-call |
+| Medication Schedule (Lich thuoc) | Elder | Today's med list |
+| Settings (Cai dat) | Elder | Profile + preferences |
+| Voice Assistant Overlay | Elder | Full-screen mic button + waveform |
+| Caregiver Dashboard | Caregiver | Elder status overview (multi-elder account switcher) |
+| Add Contact | Caregiver | Add/edit contact |
+| Add Medication | Caregiver | Add/edit medication schedule |
+| Elder Detail | Caregiver | Elder's profile + activity log |
+| Voice Enrollment | Caregiver | Guide elder through 5-phrase enrollment on elder's device |
+
+---
+
+## 8. API Design (High Level)
+
+### Auth
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /api/v1/auth/send-otp | Send OTP to phone |
+| POST | /api/v1/auth/verify-otp | Verify OTP, return JWT |
+| POST | /api/v1/auth/google | Google ID token -> JWT |
+| POST | /api/v1/auth/refresh | Refresh JWT |
+
+### User & Profile
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/v1/users/me | Get current user profile |
+| PUT | /api/v1/users/me | Update profile |
+| GET | /api/v1/users/:id/elders | Caregiver's elder list |
+
+### Voice Enrollment
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /api/v1/voice/enroll | Upload audio samples for enrollment |
+| DELETE | /api/v1/voice/enroll/:userId | Reset enrollment |
+
+### Voice Assistant
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /api/v1/voice/query | Upload audio, returns ASR text + assistant response audio |
+| POST | /api/v1/voice/verify | Upload audio for SV, returns pass/fail |
+
+### Contacts
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/v1/contacts | List contacts |
+| POST | /api/v1/contacts | Add contact |
+| PUT | /api/v1/contacts/:id | Update contact |
+| DELETE | /api/v1/contacts/:id | Delete contact |
+
+### Medications
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/v1/medications | List medications |
+| POST | /api/v1/medications | Add medication |
+| PUT | /api/v1/medications/:id | Update medication |
+| DELETE | /api/v1/medications/:id | Delete medication |
+| POST | /api/v1/medications/:id/taken | Mark dose as taken |
+
+### Notifications
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /api/v1/notifications/register | Register FCM token |
+| GET | /api/v1/notifications | List notifications |
+
+---
+
+## 9. Data Models (Simplified)
+
+### User
+```
+id, phone_number, email, name, age, city, role (ELDER/CAREGIVER),
+avatar_url, fcm_token, created_at, updated_at
+```
+
+### Elder Profile (extends User)
+```
+user_id (FK User),
+health_status_override (NORMAL/WARNING/CRITICAL, set by caregiver — nullable),
+health_status_auto (computed: NORMAL if 0-1 missed doses today,
+                              WARNING if 2-4 missed doses,
+                              CRITICAL if 5+ missed doses),
+health_status_effective (= override if set, else auto)
+```
+
+### Caregiver-Elder Link
+```
+id, caregiver_id (FK User), elder_id (FK User), created_at
+```
+
+### VoiceEnrollment
+```
+id, user_id (FK User), embedding_vector (float[]),
+phrase_index, audio_url, created_at
+```
+
+### Contact
+```
+id, elder_id (FK User), nickname, full_name, phone_number,
+relationship, call_method (PHONE/ZALO_VIDEO), created_at
+```
+
+### Medication
+```
+id, elder_id (FK User), name, frequency_per_day,
+time_slots (JSON array of HH:mm strings), created_at
+```
+
+### MedicationLog
+```
+id, medication_id (FK), scheduled_time, taken_at,
+status (TAKEN/PENDING/SNOOZED), snoozed_until
+```
+
+### CallLog
+```
+id, elder_id (FK User), contact_id (FK Contact),
+direction (IN/OUT), started_at, duration_seconds
+```
+
+---
+
+## 10. Security Considerations
+
+- All API calls over HTTPS/TLS
+- JWT access token (15min) + refresh token (7 days) stored in Encrypted SharedPreferences
+- Voice embeddings stored as non-reversible float vectors (not raw audio after enrollment)
+- OTP expires in 5 minutes, max 3 attempts before lockout
+- **SV threshold: cosine similarity ≥ 0.80** (lenient setting chosen for elderly voice variability)
+- Rate limiting on OTP and voice endpoints
+
+---
+
+## 11. Non-Functional Requirements
+
+| Requirement | Target |
+|-------------|--------|
+| Voice response latency | < 3 seconds end-to-end |
+| OTP delivery | < 10 seconds |
+| App cold start | < 2 seconds |
+| Offline support | Cached contacts + medication list readable offline |
+| Accessibility | Min font size 18sp, high contrast, large tap targets (>= 48dp) |
+| Language | Vietnamese primary, English secondary |
+
+---
+
+## 12. Academic Report Checklist (from project_requirements.md)
+
+### Requirement 1 - Speaker Model
+- [ ] Dataset description (source, size, language)
+- [ ] Train / val / test split rationale
+- [ ] Model architecture (ECAPA-TDNN / RawNet3 / equivalent)
+- [ ] Training procedure (optimizer, epochs, loss function)
+- [ ] Evaluation metrics (EER, minDCF for SV; Top-1 accuracy for SID)
+- [ ] Experimental results table
+
+### Requirement 2 - Virtual Assistant Integration
+- [ ] Enrollment procedure (phrase collection, embedding storage)
+- [ ] Overall system architecture diagram
+- [ ] Processing flow diagram (ASR -> Intent -> SV/SID -> Execute -> TTS)
+- [ ] Demo of general function (no auth)
+- [ ] Demo of SV-protected function
+- [ ] Demo of SID-personalized function
+
+---
+
+## 13. All Confirmed Decisions
+
+| # | Topic | Decision |
+|---|-------|----------|
+| 1 | Voice dataset | Pretrain on **VoxCeleb2** (SpeechBrain checkpoint); fine-tune + evaluate on **VoxVietnam** or **Vietnam-Celeb** |
+| 2 | Caregiver-Elder linking | Caregiver sets up **directly on the elder's device** |
+| 3 | Real calls | **Real Zalo / Android phone deeplinks** |
+| 4 | LLM provider | **OpenAI GPT-4o** (function-calling) |
+| 5 | Voice invocation | **Both**: wake-word "Hey Dearly" + in-app tap button |
+| 6 | Multi-elder | Yes — **multiple elder accounts** switchable on one caregiver phone |
+| 7 | Deadline | **Friday, 28 August 2026** |
+| 8 | SV threshold | **≥ 0.80** (lenient, tuned for elderly voice variability) |
+| 9 | Backend hosting | **Localhost** for demo |
+| 10 | AI microservice | **Separate Docker container** (GPU-capable, communicates with Go server via REST/gRPC) |
+| 11 | Medication snooze | **From notification shade** — Android action buttons ("Taken" / "Snooze 10 min") |
+| 12 | Health status logic | **Both**: caregiver override + auto-derived from missed doses (≥2 = Warning, ≥5 = Critical) |
+
+---
+
+## 14. Deployment Architecture (Local Demo)
+
+```
+[Android Device / Emulator]
+        |
+        | HTTP (local network / USB ADB tunnel)
+        v
++-------------------------------+  docker-compose up
+|   docker-compose              |
+|  +---------+  +-----------+  |
+|  | Go API  |  | Python AI |  |
+|  | :8080   |  | :5000     |  |
+|  +---------+  +-----------+  |
+|  +-----------+ +----------+  |
+|  | PostgreSQL| |  Redis   |  |
+|  | :5432     | |  :6379   |  |
+|  +-----------+ +----------+  |
++-------------------------------+
+        Host: localhost (demo machine)
+```
+
+- All services run via **docker-compose** on the demo laptop
+- Android device connects over **USB ADB reverse tunnel** or same WiFi
+- Python AI container has GPU passthrough (`--gpus all`) for ECAPA-TDNN inference
+- Go API container communicates with Python AI via internal Docker network (`ai-service:5000`)
+
+---
+
+## 15. Development Timeline (Target: 28 Aug 2026)
+
+| Week | Dates | Focus |
+|------|-------|-------|
+| W1 | Aug 1–3 | Project scaffolding: Android + Golang skeleton, Firebase setup, DB schema |
+| W2 | Aug 4–10 | Auth: Phone OTP, Google Sign-In, role selection, onboarding |
+| W3 | Aug 11–14 | Caregiver setup: contacts, medications, elder profile |
+| W4 | Aug 15–18 | Voice enrollment pipeline: ECAPA-TDNN service + enrollment UI |
+| W5 | Aug 19–22 | Voice assistant core: ASR + OpenAI intent + TTS + SV flow |
+| W6 | Aug 23–24 | Wake-word service, SID personalization, Zalo/phone deeplinks |
+| W7 | Aug 25–26 | Polish: accessibility, push notifications, medication reminders |
+| W8 | Aug 27–28 | Final testing, model fine-tuning results, report writing, submission |
+
+---
+
+## 16. Out of Scope (v1)
+
+- iOS version
+- Smartwatch companion
+- Real-time GPS / location tracking
+- Emergency SOS beyond voice command
+- Multi-language TTS beyond Vietnamese
+- Payment / subscription features

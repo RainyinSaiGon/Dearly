@@ -1,34 +1,54 @@
-# Gradle files
-.gradle/
-build/
+# ─── Secrets (NEVER commit these) ─────────────────────────────────
+.env
+*.json
+!.env.example
+# Re-allow non-secret JSON (package.json etc.) if needed:
+# !some/path/package.json
 
-# Local configuration file (sdk path, etc)
-local.properties
-
-# Log/OS Files
-*.log
-
-# Android Studio generated files and folders
-captures/
-.externalNativeBuild/
-.cxx/
-*.aab
-*.apk
-output-metadata.json
-
-# IntelliJ
-*.iml
-.idea/
-misc.xml
-deploymentTargetDropDown.xml
-render.experimental.xml
-
-# Keystore files
-*.jks
-*.keystore
-
-# Google Services (e.g. APIs or Firebase)
+# ─── Firebase / GCP credential files ──────────────────────────────
 google-services.json
+firebase-sa.json
+gcp-sa.json
+*-service-account*.json
 
-# Android Profiling
-*.hprof
+# ─── Model weights (too large for git — use GDrive / DVC) ─────────
+models/
+*.ckpt
+*.pt
+*.pth
+*.bin
+
+# ─── Android ───────────────────────────────────────────────────────
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/*.iml
+android/.idea/
+
+# ─── Go ────────────────────────────────────────────────────────────
+backend/vendor/
+backend/*.exe
+backend/tmp/
+
+# ─── Python ────────────────────────────────────────────────────────
+ai-service/__pycache__/
+ai-service/**/__pycache__/
+ai-service/.venv/
+ai-service/venv/
+ai-service/*.egg-info/
+ai-service/dist/
+ai-service/.pytest_cache/
+*.pyc
+*.pyo
+
+# ─── Docker ────────────────────────────────────────────────────────
+.dockerignore
+
+# ─── OS / Editor ───────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
