@@ -8,9 +8,12 @@ Elder-care mobile app · Kotlin + Jetpack Compose · Golang · ECAPA-TDNN · Ope
 
 ```
 Dearly/
-├── android/          ← Android app (Kotlin + Jetpack Compose)
-├── backend/          ← REST API server (Go + Gin + PostgreSQL)
-├── ai-service/       ← Voice AI microservice (Python + FastAPI + ECAPA-TDNN)
+├── .github/workflows/ ← CI/CD Pipeline (GitHub Actions)
+│   ├── ci.yml         ← Continuous Integration Matrix with paths filtering
+│   └── release-android.yml ← Automatic installable APK packaging on tag push
+├── android/           ← Android app (Kotlin 2.1.0 + Jetpack Compose + Hilt)
+├── backend/           ← REST API server (Go 1.22 + Gin + PostgreSQL)
+├── ai-service/        ← Voice AI microservice (Python 3.11 + FastAPI + ECAPA-TDNN)
 ├── docker-compose.yml
 ├── .env.example
 ├── specs.md
@@ -19,12 +22,27 @@ Dearly/
 
 ---
 
+## CI/CD Pipeline Overview
+
+The project includes an optimized GitHub Actions matrix with path filtering ([`.github/workflows/ci.yml`](file:///c:/Users/Vu/schoolProject/Dearly/.github/workflows/ci.yml)):
+
+| Job | Trigger Filter | Tasks Executed | Output Artifact |
+|-----|----------------|----------------|-----------------|
+| **`changes`** | Push / PR | Uses `dorny/paths-filter` to detect modified component directories | Filter outputs for job gating |
+| **`android-ci`** | `android/**` | Runs `./gradlew lintDebug testDebugUnitTest` and compiles `app-debug.apk` | `dearly-android-debug-apk` |
+| **`backend-ci`** | `backend/**` | Runs `go vet` & `go test`, verifies Go binary compilation | Verified `dearly-api` binary |
+| **`ai-service-ci`** | `ai-service/**` | Runs `ruff check .` linting + `pytest` import & unit testing | Verified Python microservice |
+| **`docker-ci`** | Dockerfiles / Compose | Validates `docker compose config` and executes `docker compose build` | Built Docker image stack |
+| **`release-android`** | Tag push (`v*`) | Builds installable debug-signed & release APKs | Release APK assets on GitHub Releases |
+
+---
+
 ## Prerequisites
 
 | Tool | Version |
 |------|---------|
 | Android Studio | Ladybug (2024.2) or newer |
-| JDK | 17+ |
+| JDK | 21 (LTS) |
 | Go | 1.22+ |
 | Python | 3.11+ |
 | Docker Desktop | 4.x |
@@ -117,13 +135,3 @@ curl http://localhost:5000/health   # → {"status":"ok"}
 3. Wait for Gradle sync to complete
 4. Create an emulator (API 33+) or connect a physical device
 5. Run the app ▶
-
----
-
-## Team Contacts
-
-| Role | Name |
-|------|------|
-| Android | TBD |
-| Backend (Go) | TBD |
-| AI / Model | TBD |

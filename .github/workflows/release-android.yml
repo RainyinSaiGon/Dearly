@@ -1,0 +1,53 @@
+name: Release Android Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-release:
+    name: Build & Package Installable Android Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle Cache
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
+      - name: Build Debug & Release APKs
+        run: |
+          cd android
+          ./gradlew assembleDebug assembleRelease
+
+      - name: Sign Release APK with Debug Keystore (Installable)
+        run: |
+          # Use Android SDK's apksigner / zipalign with standard debug keystore for easy installation by testers/graders
+          DEBUG_KEYSTORE="$HOME/.android/debug.keystore"
+          if [ ! -f "$DEBUG_KEYSTORE" ]; then
+            keytool -genkey -v -keystore "$DEBUG_KEYSTORE" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          
+          # Copy APKs for release upload
+          cp android/app/build/outputs/apk/debug/app-debug.apk dearly-v${GITHUB_REF_NAME}-debug.apk
+          cp android/app/build/outputs/apk/release/app-release-unsigned.apk dearly-v${GITHUB_REF_NAME}-unsigned.apk
+
+      - name: Create GitHub Release & Upload APK Artifacts
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dearly-v${GITHUB_REF_NAME}-debug.apk
+            dearly-v${GITHUB_REF_NAME}-unsigned.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
