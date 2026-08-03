@@ -62,7 +62,7 @@ fun ElderMedicationScreen(
                         logs = logs.map {
                             if (it.id == targetLog.id) {
                                 val newStatus = if (it.status == DoseStatus.TAKEN) DoseStatus.PENDING else DoseStatus.TAKEN
-                                it.copy(status = newStatus)
+                                it.copy(status = newStatus).also(onMarkAsTaken)
                             } else it
                         }
                     }

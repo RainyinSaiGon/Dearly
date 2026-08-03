@@ -14,9 +14,11 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun OtpScreen(
     phoneNumber: String,
-    onVerifySuccess: () -> Unit
+    onVerifyOtp: (String, () -> Unit, (String) -> Unit) -> Unit
 ) {
     var otpCode by remember { mutableStateOf("") }
+    var isVerifying by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -61,16 +63,42 @@ fun OtpScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             Button(
-                onClick = { if (otpCode.length == 6) onVerifySuccess() },
+                onClick = {
+                    errorMessage = null
+                    if (otpCode.length != 6) {
+                        errorMessage = "Mã OTP phải gồm 6 chữ số."
+                    } else {
+                        isVerifying = true
+                        onVerifyOtp(
+                            otpCode,
+                            { isVerifying = false },
+                            { message ->
+                                isVerifying = false
+                                errorMessage = message
+                            }
+                        )
+                    }
+                },
+                enabled = !isVerifying,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(64.dp),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Text(
-                    text = "XÁC NHẬN",
+                    text = if (isVerifying) "ĐANG XÁC MINH..." else "XÁC NHẬN",
                     style = MaterialTheme.typography.labelLarge,
                     fontSize = 20.sp
+                )
+            }
+
+            if (errorMessage != null) {
+                Text(
+                    text = errorMessage.orEmpty(),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 12.dp)
                 )
             }
         }

@@ -1,9 +1,12 @@
 package com.dearly.app.navigation
 
+import android.net.Uri
+
 sealed class Screen(val route: String) {
     object PhoneAuth : Screen("phone_auth")
-    object OtpVerification : Screen("otp_verification/{phoneNumber}") {
-        fun createRoute(phoneNumber: String) = "otp_verification/$phoneNumber"
+    object OtpVerification : Screen("otp_verification/{phoneNumber}/{verificationId}") {
+        fun createRoute(phoneNumber: String, verificationId: String) =
+            "otp_verification/${Uri.encode(phoneNumber)}/${Uri.encode(verificationId)}"
     }
     object RoleSelection : Screen("role_selection")
     object VoiceEnrollment : Screen("voice_enrollment")

@@ -1,11 +1,24 @@
 package com.dearly.app.navigation
 
+import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import android.telephony.PhoneNumberUtils
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.google.firebase.FirebaseException
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.PhoneAuthCredential
+import com.google.firebase.auth.PhoneAuthOptions
+import com.google.firebase.auth.PhoneAuthProvider
+import java.util.concurrent.TimeUnit
 import com.dearly.app.domain.model.UserRole
+import com.dearly.app.domain.model.Contact
 import com.dearly.app.ui.auth.OtpScreen
 import com.dearly.app.ui.auth.PhoneAuthScreen
 import com.dearly.app.ui.auth.RoleSelectionScreen
@@ -24,6 +37,11 @@ fun DearlyNavGraph(
     navController: NavHostController = rememberNavController(),
     startDestination: String = Screen.PhoneAuth.route
 ) {
+    val context = LocalContext.current
+    val activity = context as? Activity
+    val placeCall: (Contact) -> Unit = { contact ->
+        context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(contact.phoneNumber)}")))
+    }
     NavHost(
         navController = navController,
         startDestination = startDestination
@@ -31,22 +49,76 @@ fun DearlyNavGraph(
         // Auth Flow
         composable(Screen.PhoneAuth.route) {
             PhoneAuthScreen(
-                onSendOtpClicked = { phone ->
-                    navController.navigate(Screen.OtpVerification.createRoute(phone))
+                onSendOtpClicked = { phone, onCodeSent, onError ->
+                    if (activity == null || !PhoneNumberUtils.isGlobalPhoneNumber(phone)) {
+                        onError("Hãy nhập số điện thoại quốc tế hợp lệ, ví dụ +84912345678.")
+                    } else {
+                        try {
+                            val callbacks = object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
+                                override fun onVerificationCompleted(credential: PhoneAuthCredential) {
+                                    FirebaseAuth.getInstance().signInWithCredential(credential)
+                                        .addOnSuccessListener {
+                                            navController.navigate(Screen.RoleSelection.route) {
+                                                popUpTo(Screen.PhoneAuth.route) { inclusive = true }
+                                            }
+                                        }
+                                        .addOnFailureListener { onError(it.localizedMessage ?: "Không thể xác thực số điện thoại.") }
+                                }
+
+                                override fun onVerificationFailed(exception: FirebaseException) {
+                                    onError(exception.localizedMessage ?: "Không thể gửi mã OTP.")
+                                }
+
+                                override fun onCodeSent(verificationId: String, token: PhoneAuthProvider.ForceResendingToken) {
+                                    onCodeSent(verificationId)
+                                    navController.navigate(Screen.OtpVerification.createRoute(phone, verificationId))
+                                }
+                            }
+                            PhoneAuthProvider.verifyPhoneNumber(
+                                PhoneAuthOptions.newBuilder(FirebaseAuth.getInstance())
+                                    .setPhoneNumber(phone)
+                                    .setTimeout(60L, TimeUnit.SECONDS)
+                                    .setActivity(activity)
+                                    .setCallbacks(callbacks)
+                                    .build()
+                            )
+                        } catch (exception: Exception) {
+                            onError("Firebase chưa được cấu hình: ${exception.localizedMessage ?: "không thể gửi OTP"}")
+                        }
+                    }
                 },
-                onGoogleSignInClicked = {
-                    navController.navigate(Screen.RoleSelection.route)
+                onGoogleSignInClicked = { idToken, onSuccess, onError ->
+                    FirebaseAuth.getInstance()
+                        .signInWithCredential(GoogleAuthProvider.getCredential(idToken, null))
+                        .addOnSuccessListener {
+                            onSuccess()
+                            navController.navigate(Screen.RoleSelection.route) {
+                                popUpTo(Screen.PhoneAuth.route) { inclusive = true }
+                            }
+                        }
+                        .addOnFailureListener { onError(it.localizedMessage ?: "Không thể đăng nhập bằng Google.") }
                 }
             )
         }
 
         composable(Screen.OtpVerification.route) { backStackEntry ->
             val phone = backStackEntry.arguments?.getString("phoneNumber") ?: ""
+            val verificationId = backStackEntry.arguments?.getString("verificationId") ?: ""
             OtpScreen(
                 phoneNumber = phone,
-                onVerifySuccess = {
-                    navController.navigate(Screen.RoleSelection.route) {
-                        popUpTo(Screen.PhoneAuth.route) { inclusive = true }
+                onVerifyOtp = { otp, onSuccess, onError ->
+                    if (verificationId.isBlank()) {
+                        onError("Phiên xác thực đã hết hạn. Hãy yêu cầu mã mới.")
+                    } else {
+                        FirebaseAuth.getInstance()
+                            .signInWithCredential(PhoneAuthProvider.getCredential(verificationId, otp))
+                            .addOnSuccessListener {
+                                onSuccess()
+                                navController.navigate(Screen.RoleSelection.route) {
+                                    popUpTo(Screen.PhoneAuth.route) { inclusive = true }
+                                }
+                            }
+                            .addOnFailureListener { onError(it.localizedMessage ?: "Mã OTP không hợp lệ.") }
                     }
                 }
             )
@@ -93,13 +165,13 @@ fun DearlyNavGraph(
         composable(Screen.ElderContacts.route) {
             ElderContactsScreen(
                 onNavigateBack = { navController.popBackStack() },
-                onCallClicked = { contact -> /* Trigger Call */ }
+                onCallClicked = placeCall
             )
         }
 
         composable(Screen.ElderMedication.route) {
             ElderMedicationScreen(
-                onMarkAsTaken = { log -> /* Mark log taken */ }
+                onMarkAsTaken = { /* Repository persistence is introduced with the medication data layer. */ }
             )
         }
 
@@ -107,6 +179,7 @@ fun DearlyNavGraph(
             ElderSettingsScreen(
                 onReEnrollVoiceClicked = { navController.navigate(Screen.VoiceEnrollment.route) },
                 onSignOutClicked = {
+                    FirebaseAuth.getInstance().signOut()
                     navController.navigate(Screen.PhoneAuth.route) {
                         popUpTo(0)
                     }
@@ -126,6 +199,7 @@ fun DearlyNavGraph(
                 onNavigateToAddContact = { navController.navigate(Screen.AddContact.route) },
                 onNavigateToAddMedication = { navController.navigate(Screen.AddMedication.route) },
                 onSignOut = {
+                    FirebaseAuth.getInstance().signOut()
                     navController.navigate(Screen.PhoneAuth.route) {
                         popUpTo(0)
                     }
