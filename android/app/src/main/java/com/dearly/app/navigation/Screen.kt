@@ -1,28 +1,12 @@
 package com.dearly.app.navigation
 
-import android.net.Uri
-
 sealed class Screen(val route: String) {
+    object Onboarding : Screen("onboarding")
     object PhoneAuth : Screen("phone_auth")
-    object OtpVerification : Screen("otp_verification/{phoneNumber}/{verificationId}") {
-        fun createRoute(phoneNumber: String, verificationId: String) =
-            "otp_verification/${Uri.encode(phoneNumber)}/${Uri.encode(verificationId)}"
-    }
+    object SignUp : Screen("sign_up")
+    object OtpVerification : Screen("otp_verification")
+    object Welcome : Screen("welcome")
+    object Welcome1 : Screen("welcome_1")
+    object Welcome2 : Screen("welcome_2")
     object RoleSelection : Screen("role_selection")
-    object VoiceEnrollment : Screen("voice_enrollment")
-    
-    // Elder Screens
-    object ElderHome : Screen("elder_home")
-    object ElderContacts : Screen("elder_contacts")
-    object ElderMedication : Screen("elder_medication")
-    object ElderSettings : Screen("elder_settings")
-    object VoiceAssistantOverlay : Screen("voice_assistant_overlay")
-
-    // Caregiver Screens
-    object CaregiverDashboard : Screen("caregiver_dashboard")
-    object AddContact : Screen("add_contact")
-    object AddMedication : Screen("add_medication")
-    object ElderDetail : Screen("elder_detail/{elderId}") {
-        fun createRoute(elderId: String) = "elder_detail/$elderId"
-    }
 }

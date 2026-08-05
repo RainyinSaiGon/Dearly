@@ -1,5 +1,6 @@
 package com.dearly.app.ui.auth
 
+/* Temporarily disabled with the Firebase phone-auth backend.
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -104,3 +105,4 @@ fun OtpScreen(
         }
     }
 }
+*/

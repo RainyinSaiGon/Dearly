@@ -1,52 +1,101 @@
 package com.dearly.app.navigation
 
-import android.app.Activity
-import android.content.Intent
-import android.net.Uri
-import android.telephony.PhoneNumberUtils
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.google.firebase.FirebaseException
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.GoogleAuthProvider
-import com.google.firebase.auth.PhoneAuthCredential
-import com.google.firebase.auth.PhoneAuthOptions
-import com.google.firebase.auth.PhoneAuthProvider
-import java.util.concurrent.TimeUnit
-import com.dearly.app.domain.model.UserRole
-import com.dearly.app.domain.model.Contact
-import com.dearly.app.ui.auth.OtpScreen
-import com.dearly.app.ui.auth.PhoneAuthScreen
+import com.dearly.app.ui.auth.OnboardingScreen
+import com.dearly.app.ui.auth.OtpVerificationScreen
+import com.dearly.app.ui.auth.SignInScreen
 import com.dearly.app.ui.auth.RoleSelectionScreen
-import com.dearly.app.ui.caregiver.AddContactScreen
-import com.dearly.app.ui.caregiver.AddMedicationScreen
-import com.dearly.app.ui.caregiver.CaregiverDashboardScreen
-import com.dearly.app.ui.elder.ElderContactsScreen
-import com.dearly.app.ui.elder.ElderHomeScreen
-import com.dearly.app.ui.elder.ElderMedicationScreen
-import com.dearly.app.ui.elder.ElderSettingsScreen
-import com.dearly.app.ui.voice.VoiceAssistantOverlay
-import com.dearly.app.ui.voice.VoiceEnrollmentScreen
+import com.dearly.app.ui.auth.SignUpScreen
+import com.dearly.app.ui.auth.WelcomeScreen
+import com.dearly.app.ui.auth.WelcomeScreen1
+import com.dearly.app.ui.auth.WelcomeScreen2
 
 @Composable
 fun DearlyNavGraph(
     navController: NavHostController = rememberNavController(),
-    startDestination: String = Screen.PhoneAuth.route
+    startDestination: String = Screen.Onboarding.route
 ) {
-    val context = LocalContext.current
-    val activity = context as? Activity
-    val placeCall: (Contact) -> Unit = { contact ->
-        context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(contact.phoneNumber)}")))
-    }
     NavHost(
         navController = navController,
         startDestination = startDestination
     ) {
-        // Auth Flow
+        // Authentication UI is enabled; backend verification remains disabled.
+        composable(Screen.Onboarding.route) {
+            OnboardingScreen(
+                onFinished = {
+                    navController.navigate(Screen.PhoneAuth.route) {
+                        popUpTo(Screen.Onboarding.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        composable(Screen.PhoneAuth.route) {
+            SignInScreen(
+                onContinue = {
+                    navController.navigate(Screen.RoleSelection.route) {
+                        popUpTo(Screen.PhoneAuth.route) { inclusive = true }
+                    }
+                },
+                onSignUp = { navController.navigate(Screen.SignUp.route) }
+            )
+        }
+
+        composable(Screen.SignUp.route) {
+            SignUpScreen(
+                onBack = { navController.popBackStack() },
+                onContinue = {
+                    navController.navigate(Screen.OtpVerification.route)
+                },
+                onSignIn = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.OtpVerification.route) {
+            OtpVerificationScreen(
+                onContinue = { navController.navigate(Screen.Welcome.route) }
+            )
+        }
+
+        composable(Screen.Welcome.route) {
+            WelcomeScreen(
+                onContinue = { navController.navigate(Screen.Welcome1.route) }
+            )
+        }
+
+        composable(Screen.Welcome1.route) {
+            WelcomeScreen1(
+                onContinue = { navController.navigate(Screen.Welcome2.route) },
+                onSkip = {
+                    navController.navigate(Screen.RoleSelection.route) {
+                        popUpTo(Screen.Welcome.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        composable(Screen.Welcome2.route) {
+            WelcomeScreen2(
+                onContinue = {
+                    navController.navigate(Screen.RoleSelection.route) {
+                        popUpTo(Screen.Welcome.route) { inclusive = true }
+                    }
+                },
+                onSkip = {
+                    navController.navigate(Screen.RoleSelection.route) {
+                        popUpTo(Screen.Welcome.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        /*
+         * Backend authentication is intentionally disabled for local UI development.
+         * Keep this flow here to restore Firebase phone/Google sign-in later.
         composable(Screen.PhoneAuth.route) {
             PhoneAuthScreen(
                 onSendOtpClicked = { phone, onCodeSent, onError ->
@@ -123,101 +172,13 @@ fun DearlyNavGraph(
                 }
             )
         }
+        */
 
         composable(Screen.RoleSelection.route) {
             RoleSelectionScreen(
-                onRoleSelected = { role ->
-                    if (role == UserRole.ELDER) {
-                        navController.navigate(Screen.VoiceEnrollment.route) {
-                            popUpTo(Screen.RoleSelection.route) { inclusive = true }
-                        }
-                    } else {
-                        navController.navigate(Screen.CaregiverDashboard.route) {
-                            popUpTo(Screen.RoleSelection.route) { inclusive = true }
-                        }
-                    }
-                }
-            )
-        }
-
-        composable(Screen.VoiceEnrollment.route) {
-            VoiceEnrollmentScreen(
-                onEnrollmentComplete = {
-                    navController.navigate(Screen.ElderHome.route) {
-                        popUpTo(Screen.VoiceEnrollment.route) { inclusive = true }
-                    }
-                }
-            )
-        }
-
-        // Elder Navigation Flow
-        composable(Screen.ElderHome.route) {
-            ElderHomeScreen(
-                onSpeakClicked = {
-                    navController.navigate(Screen.VoiceAssistantOverlay.route)
-                },
-                onNavigateToContacts = { navController.navigate(Screen.ElderContacts.route) },
-                onNavigateToMedication = { navController.navigate(Screen.ElderMedication.route) },
-                onNavigateToSettings = { navController.navigate(Screen.ElderSettings.route) }
-            )
-        }
-
-        composable(Screen.ElderContacts.route) {
-            ElderContactsScreen(
-                onNavigateBack = { navController.popBackStack() },
-                onCallClicked = placeCall
-            )
-        }
-
-        composable(Screen.ElderMedication.route) {
-            ElderMedicationScreen(
-                onMarkAsTaken = { /* Repository persistence is introduced with the medication data layer. */ }
-            )
-        }
-
-        composable(Screen.ElderSettings.route) {
-            ElderSettingsScreen(
-                onReEnrollVoiceClicked = { navController.navigate(Screen.VoiceEnrollment.route) },
-                onSignOutClicked = {
-                    FirebaseAuth.getInstance().signOut()
-                    navController.navigate(Screen.PhoneAuth.route) {
-                        popUpTo(0)
-                    }
-                }
-            )
-        }
-
-        composable(Screen.VoiceAssistantOverlay.route) {
-            VoiceAssistantOverlay(
-                onDismiss = { navController.popBackStack() }
-            )
-        }
-
-        // Caregiver Navigation Flow
-        composable(Screen.CaregiverDashboard.route) {
-            CaregiverDashboardScreen(
-                onNavigateToAddContact = { navController.navigate(Screen.AddContact.route) },
-                onNavigateToAddMedication = { navController.navigate(Screen.AddMedication.route) },
-                onSignOut = {
-                    FirebaseAuth.getInstance().signOut()
-                    navController.navigate(Screen.PhoneAuth.route) {
-                        popUpTo(0)
-                    }
-                }
-            )
-        }
-
-        composable(Screen.AddContact.route) {
-            AddContactScreen(
-                onNavigateBack = { navController.popBackStack() },
-                onContactSaved = { navController.popBackStack() }
-            )
-        }
-
-        composable(Screen.AddMedication.route) {
-            AddMedicationScreen(
-                onNavigateBack = { navController.popBackStack() },
-                onMedicationSaved = { navController.popBackStack() }
+                // Dashboard flows were removed with the caregiver, elder and voice screens.
+                onRoleSelected = { },
+                onBack = { navController.popBackStack() }
             )
         }
     }

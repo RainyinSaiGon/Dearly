@@ -2,6 +2,12 @@
 <resources>
     <style name="Theme.Dearly" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">#1B4332</item>
-        <item name="android:windowBackground">#F8F9FA</item>
+        <item name="android:windowBackground">#1B4332</item>
+    </style>
+
+    <style name="Theme.Dearly.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#1B4332</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_transparent</item>
+        <item name="postSplashScreenTheme">@style/Theme.Dearly</item>
     </style>
 </resources>
