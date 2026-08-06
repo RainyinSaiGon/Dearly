@@ -43,7 +43,11 @@ import androidx.compose.ui.unit.sp
 private val SettingsForest = Color(0xFF174D3B)
 
 @Composable
-fun CaregiverSettingsScreen() {
+fun CaregiverSettingsScreen(
+    onOpenActivity: () -> Unit = {},
+    onOpenCalls: () -> Unit = {},
+    onOpenMedications: () -> Unit = {}
+) {
     var editProfile by remember { mutableStateOf(false) }
     var savedRole by remember { mutableStateOf("Bác") }
     var savedVoice by remember { mutableStateOf("Nam miền Bắc") }
@@ -64,7 +68,16 @@ fun CaregiverSettingsScreen() {
         } else {
             SettingsContent(Modifier.weight(1f)) { editProfile = true }
         }
-        CaregiverBottomNavigation(selectedTab = CaregiverTab.SETTINGS)
+        if (!editProfile) {
+            CaregiverBottomNavigation(
+                selectedTab = CaregiverTab.SETTINGS,
+                onTabSelected = {
+                    if (it == CaregiverTab.ACTIVITY) onOpenActivity()
+                    if (it == CaregiverTab.CALLS) onOpenCalls()
+                    if (it == CaregiverTab.MEDICATIONS) onOpenMedications()
+                }
+            )
+        }
     }
 }
 
@@ -109,9 +122,9 @@ private fun ProfileEditor(
     var role by remember(initialRole) { mutableStateOf(initialRole) }
     var voice by remember(initialVoice) { mutableStateOf(initialVoice) }
     Column(modifier.padding(22.dp)) {
-        Avatar(editable = true)
-        Text("Thay đổi ảnh đại diện", color = SettingsForest, fontSize = 16.sp, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-        Text("Xưng hô với ba/mẹ", color = Color(0xFF33403D), fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 24.dp))
+        Spacer(Modifier.height(18.dp))
+        Avatar(editable = true, avatarSize = 112.dp)
+        Text("Xưng hô với ba/mẹ", color = Color(0xFF33403D), fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 34.dp))
         Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) { listOf("Bác", "Ông", "Ba/Mẹ").forEach { item -> Choice(item, role == item) { role = item } } }
         Text("Giọng đọc", color = Color(0xFF33403D), fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 22.dp, bottom = 8.dp))
         listOf("Nữ miền Bắc", "Nam miền Bắc", "Nữ miền Nam", "Nam miền Nam").forEach { item -> Choice(item, voice == item, Modifier.fillMaxWidth().padding(vertical = 4.dp)) { voice = item } }
@@ -122,7 +135,7 @@ private fun ProfileEditor(
 }
 
 @Composable
-private fun Avatar(editable: Boolean) { androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { androidx.compose.foundation.layout.Box(Modifier.size(78.dp)) { Surface(color = Color(0xFFE8EBE9), shape = CircleShape, modifier = Modifier.fillMaxSize()) { Icon(Icons.Outlined.PersonOutline, null, tint = Color(0xFF404946), modifier = Modifier.padding(22.dp)) }; if (editable) Surface(color = SettingsForest, shape = CircleShape, modifier = Modifier.size(22.dp).align(Alignment.BottomEnd)) { Icon(Icons.Outlined.Edit, null, tint = Color.White, modifier = Modifier.padding(5.dp)) } } } }
+private fun Avatar(editable: Boolean, avatarSize: androidx.compose.ui.unit.Dp = 78.dp) { androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { androidx.compose.foundation.layout.Box(Modifier.size(avatarSize)) { Surface(color = Color(0xFFE8EBE9), shape = CircleShape, modifier = Modifier.fillMaxSize()) { Icon(Icons.Outlined.PersonOutline, null, tint = Color(0xFF404946), modifier = Modifier.padding(if (editable) 30.dp else 22.dp)) }; if (editable) Surface(color = SettingsForest, shape = CircleShape, modifier = Modifier.size(26.dp).align(Alignment.BottomEnd)) { Icon(Icons.Outlined.Edit, null, tint = Color.White, modifier = Modifier.padding(6.dp)) } } } }
 
 @Composable
 private fun Choice(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) { Surface(color = if (selected) Color(0xFFE1F0E9) else Color.White, shape = RoundedCornerShape(9.dp), border = androidx.compose.foundation.BorderStroke(1.dp, if (selected) SettingsForest else Color(0xFFE2E6E3)), modifier = modifier.clickable(onClick = onClick)) { Text(label, color = Color(0xFF33403D), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 15.dp, vertical = 11.dp)) } }

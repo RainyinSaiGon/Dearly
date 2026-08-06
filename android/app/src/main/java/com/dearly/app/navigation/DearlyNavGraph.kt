@@ -210,6 +210,12 @@ fun DearlyNavGraph(
                 onOpenCalls = { navController.navigate(Screen.CaregiverCalls.route) }, onOpenSettings = { navController.navigate(Screen.CaregiverSettings.route) }
             )
         }
-        composable(Screen.CaregiverSettings.route) { CaregiverSettingsScreen() }
+        composable(Screen.CaregiverSettings.route) {
+            CaregiverSettingsScreen(
+                onOpenActivity = { navController.navigate(Screen.CaregiverActivity.route) },
+                onOpenCalls = { navController.navigate(Screen.CaregiverCalls.route) },
+                onOpenMedications = { navController.navigate(Screen.CaregiverMedications.route) }
+            )
+        }
     }
 }
