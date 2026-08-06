@@ -214,7 +214,12 @@ fun DearlyNavGraph(
             CaregiverSettingsScreen(
                 onOpenActivity = { navController.navigate(Screen.CaregiverActivity.route) },
                 onOpenCalls = { navController.navigate(Screen.CaregiverCalls.route) },
-                onOpenMedications = { navController.navigate(Screen.CaregiverMedications.route) }
+                onOpenMedications = { navController.navigate(Screen.CaregiverMedications.route) },
+                onLogout = {
+                    navController.navigate(Screen.PhoneAuth.route) {
+                        popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                    }
+                }
             )
         }
     }

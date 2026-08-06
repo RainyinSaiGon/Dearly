@@ -20,7 +20,6 @@ import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.PersonOutline
-import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Support
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -41,12 +40,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 private val SettingsForest = Color(0xFF174D3B)
+private enum class SettingsOption { ACCOUNT, NOTIFICATIONS, LANGUAGE, SUPPORT }
 
 @Composable
 fun CaregiverSettingsScreen(
     onOpenActivity: () -> Unit = {},
     onOpenCalls: () -> Unit = {},
-    onOpenMedications: () -> Unit = {}
+    onOpenMedications: () -> Unit = {},
+    onLogout: () -> Unit = {}
 ) {
     var editProfile by remember { mutableStateOf(false) }
     var savedRole by remember { mutableStateOf("Bác") }
@@ -66,7 +67,11 @@ fun CaregiverSettingsScreen(
                 onCancel = { editProfile = false }
             )
         } else {
-            SettingsContent(Modifier.weight(1f)) { editProfile = true }
+            SettingsContent(
+                modifier = Modifier.weight(1f),
+                onEdit = { editProfile = true },
+                onLogout = onLogout
+            )
         }
         if (!editProfile) {
             CaregiverBottomNavigation(
@@ -82,8 +87,12 @@ fun CaregiverSettingsScreen(
 }
 
 @Composable
-private fun SettingsContent(modifier: Modifier, onEdit: () -> Unit) {
-    Column(modifier.padding(18.dp)) {
+private fun SettingsContent(modifier: Modifier, onEdit: () -> Unit, onLogout: () -> Unit) {
+    var activeOption by remember { mutableStateOf<SettingsOption?>(null) }
+    var language by remember { mutableStateOf("Tiếng Việt") }
+    var role by remember { mutableStateOf("Người chăm sóc") }
+    var showLogoutConfirmation by remember { mutableStateOf(false) }
+    Column(modifier.padding(horizontal = 12.dp, vertical = 22.dp)) {
         Surface(color = Color.White, shape = RoundedCornerShape(12.dp), shadowElevation = 1.dp) {
             Column(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Avatar(editable = false)
@@ -93,22 +102,186 @@ private fun SettingsContent(modifier: Modifier, onEdit: () -> Unit) {
                 Button(onClick = onEdit, modifier = Modifier.padding(top = 12.dp).height(40.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFA7F1CD), contentColor = SettingsForest)) { Text("Chỉnh sửa", fontSize = 15.sp) }
             }
         }
-        Text("TÙY CHỌN", color = Color(0xFF66736F), fontSize = 11.sp, modifier = Modifier.padding(top = 18.dp, bottom = 8.dp))
-        Surface(color = Color.White, shape = RoundedCornerShape(10.dp)) {
-            Column { SettingRow(Icons.Outlined.PersonOutline, "Cài đặt tài khoản"); SettingRow(Icons.Outlined.Notifications, "Thông báo"); SettingRow(Icons.Outlined.Shield, "Bảo mật"); SettingRow(Icons.Outlined.Language, "Ngôn ngữ", "Tiếng Việt"); SettingRow(Icons.Outlined.Support, "Hỗ trợ") }
+        Text("TÙY CHỌN", color = Color(0xFF66736F), fontSize = 11.sp, modifier = Modifier.padding(top = 22.dp, bottom = 14.dp))
+        Surface(color = Color.White, shape = RoundedCornerShape(12.dp)) {
+            Column(Modifier.padding(vertical = 6.dp)) {
+                SettingRow(Icons.Outlined.PersonOutline, "Cài đặt tài khoản") { activeOption = SettingsOption.ACCOUNT }
+                SettingRow(Icons.Outlined.Notifications, "Thông báo") { activeOption = SettingsOption.NOTIFICATIONS }
+                SettingRow(Icons.Outlined.Language, "Ngôn ngữ", language) { activeOption = SettingsOption.LANGUAGE }
+                SettingRow(Icons.Outlined.Support, "Hỗ trợ") { activeOption = SettingsOption.SUPPORT }
+            }
         }
         Spacer(Modifier.weight(1f))
-        Button(onClick = {}, modifier = Modifier.fillMaxWidth().height(44.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFF6F4), contentColor = Color(0xFFD22C2C))) { Text("Đăng xuất", fontWeight = FontWeight.Bold) }
+        Button(
+            onClick = { showLogoutConfirmation = true },
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFF6F4), contentColor = Color(0xFFD22C2C)),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFD5D0))
+        ) { Text("Đăng xuất", fontWeight = FontWeight.Bold) }
+    }
+    activeOption?.let { option ->
+        SettingsOptionDialog(
+            option = option,
+            language = language,
+            onLanguageChange = { language = it },
+            role = role,
+            onRoleChange = { role = it },
+            onDismiss = { activeOption = null }
+        )
+    }
+    if (showLogoutConfirmation) {
+        LogoutConfirmationDialog(
+            onDismiss = { showLogoutConfirmation = false },
+            onConfirm = onLogout
+        )
     }
 }
 
 @Composable
-private fun SettingRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String? = null) {
-    Row(Modifier.fillMaxWidth().clickable { }.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Surface(color = Color(0xFFF1F5F2), shape = RoundedCornerShape(8.dp), modifier = Modifier.size(30.dp)) { Icon(icon, null, tint = SettingsForest, modifier = Modifier.padding(7.dp)) }
-        Column(Modifier.weight(1f).padding(start = 12.dp)) { Text(title, color = Color(0xFF33403D), fontSize = 14.sp); if (subtitle != null) Text(subtitle, color = Color(0xFF7D8B90), fontSize = 11.sp) }
-        Icon(Icons.Outlined.ChevronRight, null, tint = Color(0xFF7D8B90))
+private fun SettingRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String? = null, onClick: () -> Unit = {}) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Surface(color = Color(0xFFF1F5F2), shape = RoundedCornerShape(9.dp), modifier = Modifier.size(32.dp)) { Icon(icon, null, tint = SettingsForest, modifier = Modifier.padding(8.dp)) }
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(title, color = Color(0xFF33403D), fontSize = 16.sp)
+            if (subtitle != null) Text(subtitle, color = Color(0xFF7D8B90), fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+        }
+        Icon(Icons.Outlined.ChevronRight, null, tint = Color(0xFF7D8B90), modifier = Modifier.size(22.dp))
     }
+}
+
+@Composable
+private fun SettingsOptionDialog(
+    option: SettingsOption,
+    language: String,
+    onLanguageChange: (String) -> Unit,
+    role: String,
+    onRoleChange: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var medicationAlerts by remember { mutableStateOf(true) }
+    var pendingRole by remember(role) { mutableStateOf(role) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color.White,
+        title = { Text(when (option) {
+            SettingsOption.ACCOUNT -> "Cài đặt tài khoản"
+            SettingsOption.NOTIFICATIONS -> "Thông báo"
+            SettingsOption.LANGUAGE -> "Ngôn ngữ"
+            SettingsOption.SUPPORT -> "Hỗ trợ"
+        }, color = SettingsForest, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center) },
+        text = {
+            when (option) {
+                SettingsOption.ACCOUNT -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Chọn vai trò phù hợp với bạn.", color = Color(0xFF5F6B68), fontSize = 14.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    RoleChoice("Người chăm sóc", "Theo dõi và hỗ trợ người thân", pendingRole) { pendingRole = it }
+                    RoleChoice("Người được chăm sóc", "Nhận hỗ trợ từ người thân", pendingRole) { pendingRole = it }
+                }
+                SettingsOption.NOTIFICATIONS -> Column(verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    NotificationToggle("Nhắc lịch uống thuốc", medicationAlerts) { medicationAlerts = it }
+                }
+                SettingsOption.LANGUAGE -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    LanguageChoice("Tiếng Việt", language, onLanguageChange)
+                    LanguageChoice("English", language, onLanguageChange)
+                }
+                SettingsOption.SUPPORT -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Chúng tôi luôn sẵn sàng hỗ trợ bạn.", color = Color(0xFF5F6B68), fontSize = 14.sp, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    Text("Hotline: 1900 1234\nEmail: hotro@dearly.vn", color = Color(0xFF33403D), fontSize = 14.sp, modifier = Modifier.fillMaxWidth().padding(top = 16.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                }
+            }
+        },
+        confirmButton = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (option == SettingsOption.ACCOUNT) {
+                    androidx.compose.material3.TextButton(onClick = onDismiss) {
+                        Text("Hủy", color = SettingsForest, fontWeight = FontWeight.SemiBold)
+                    }
+                    Spacer(Modifier.size(10.dp))
+                }
+                Button(
+                    onClick = {
+                        if (option == SettingsOption.ACCOUNT) onRoleChange(pendingRole)
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = SettingsForest)
+                ) { Text("Xong", fontWeight = FontWeight.Bold) }
+            }
+        }
+    )
+}
+
+@Composable
+private fun RoleChoice(label: String, description: String, selectedRole: String, onSelected: (String) -> Unit) {
+    val selected = label == selectedRole
+    Surface(
+        color = if (selected) Color(0xFFE1F0E9) else Color(0xFFF8FAF8),
+        shape = RoundedCornerShape(10.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (selected) SettingsForest else Color(0xFFE1E7E4)),
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp).clickable { onSelected(label) }
+    ) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(label, color = SettingsForest, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Text(description, color = Color(0xFF67736F), fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        }
+    }
+}
+
+@Composable
+private fun NotificationToggle(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), color = Color(0xFF33403D), fontSize = 14.sp)
+        androidx.compose.material3.Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+@Composable
+private fun LanguageChoice(label: String, selectedLanguage: String, onSelected: (String) -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable { onSelected(label) }.padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.material3.RadioButton(selected = label == selectedLanguage, onClick = { onSelected(label) })
+        Spacer(Modifier.size(8.dp))
+        Text(label, color = Color(0xFF33403D), fontSize = 14.sp)
+    }
+}
+
+@Composable
+private fun LogoutConfirmationDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color.White,
+        title = {
+            Text(
+                "Đăng xuất tài khoản?",
+                color = SettingsForest,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        },
+        text = {
+            Text(
+                "Bạn có chắc muốn đăng xuất khỏi tài khoản này không?",
+                color = Color(0xFF5F6B68),
+                fontSize = 14.sp,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        },
+        confirmButton = {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.TextButton(onClick = onDismiss) {
+                    Text("Hủy", color = SettingsForest, fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(Modifier.size(10.dp))
+                Button(
+                    onClick = onConfirm,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC83A32))
+                ) { Text("Đăng xuất", fontWeight = FontWeight.Bold) }
+            }
+        }
+    )
 }
 
 @Composable
