@@ -13,6 +13,11 @@ import com.dearly.app.ui.auth.SignUpScreen
 import com.dearly.app.ui.auth.WelcomeScreen
 import com.dearly.app.ui.auth.WelcomeScreen1
 import com.dearly.app.ui.auth.WelcomeScreen2
+import com.dearly.app.ui.caregiver.CaregiverActivityScreen
+import com.dearly.app.ui.caregiver.CaregiverCallScreen
+import com.dearly.app.ui.caregiver.CaregiverMedicationScreen
+import com.dearly.app.ui.caregiver.CaregiverSettingsScreen
+import com.dearly.app.domain.model.UserRole
 
 @Composable
 fun DearlyNavGraph(
@@ -176,10 +181,35 @@ fun DearlyNavGraph(
 
         composable(Screen.RoleSelection.route) {
             RoleSelectionScreen(
-                // Dashboard flows were removed with the caregiver, elder and voice screens.
-                onRoleSelected = { },
+                onRoleSelected = { role ->
+                    if (role == UserRole.CAREGIVER) {
+                        navController.navigate(Screen.CaregiverActivity.route) {
+                            popUpTo(Screen.RoleSelection.route) { inclusive = true }
+                        }
+                    }
+                },
                 onBack = { navController.popBackStack() }
             )
         }
+
+        composable(Screen.CaregiverActivity.route) {
+            CaregiverActivityScreen(
+                onOpenCalls = { navController.navigate(Screen.CaregiverCalls.route) },
+                onOpenMedications = { navController.navigate(Screen.CaregiverMedications.route) }, onOpenSettings = { navController.navigate(Screen.CaregiverSettings.route) }
+            )
+        }
+        composable(Screen.CaregiverCalls.route) {
+            CaregiverCallScreen(
+                onOpenActivity = { navController.popBackStack() },
+                onOpenMedications = { navController.navigate(Screen.CaregiverMedications.route) }, onOpenSettings = { navController.navigate(Screen.CaregiverSettings.route) }
+            )
+        }
+        composable(Screen.CaregiverMedications.route) {
+            CaregiverMedicationScreen(
+                onOpenActivity = { navController.navigate(Screen.CaregiverActivity.route) },
+                onOpenCalls = { navController.navigate(Screen.CaregiverCalls.route) }, onOpenSettings = { navController.navigate(Screen.CaregiverSettings.route) }
+            )
+        }
+        composable(Screen.CaregiverSettings.route) { CaregiverSettingsScreen() }
     }
 }
