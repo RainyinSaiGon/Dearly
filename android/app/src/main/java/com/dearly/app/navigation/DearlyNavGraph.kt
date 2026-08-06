@@ -17,6 +17,9 @@ import com.dearly.app.ui.caregiver.CaregiverActivityScreen
 import com.dearly.app.ui.caregiver.CaregiverCallScreen
 import com.dearly.app.ui.caregiver.CaregiverMedicationScreen
 import com.dearly.app.ui.caregiver.CaregiverSettingsScreen
+import com.dearly.app.ui.elder.ElderCallingScreen
+import com.dearly.app.ui.elder.ElderMedicationScreen
+import com.dearly.app.ui.elder.ElderSettingScreen
 import com.dearly.app.domain.model.UserRole
 
 @Composable
@@ -186,6 +189,10 @@ fun DearlyNavGraph(
                         navController.navigate(Screen.CaregiverActivity.route) {
                             popUpTo(Screen.RoleSelection.route) { inclusive = true }
                         }
+                    } else {
+                        navController.navigate(Screen.ElderCalls.route) {
+                            popUpTo(Screen.RoleSelection.route) { inclusive = true }
+                        }
                     }
                 },
                 onBack = { navController.popBackStack() }
@@ -218,6 +225,43 @@ fun DearlyNavGraph(
                 onLogout = {
                     navController.navigate(Screen.PhoneAuth.route) {
                         popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                    }
+                },
+                onRoleChanged = { role ->
+                    if (role == "Người được chăm sóc") {
+                        navController.navigate(Screen.ElderCalls.route) {
+                            popUpTo(Screen.CaregiverActivity.route) { inclusive = true }
+                        }
+                    }
+                }
+            )
+        }
+        composable(Screen.ElderCalls.route) {
+            ElderCallingScreen(
+                onOpenMedications = { navController.navigate(Screen.ElderMedications.route) },
+                onOpenSettings = { navController.navigate(Screen.ElderSettings.route) }
+            )
+        }
+        composable(Screen.ElderMedications.route) {
+            ElderMedicationScreen(
+                onOpenCalls = { navController.navigate(Screen.ElderCalls.route) },
+                onOpenSettings = { navController.navigate(Screen.ElderSettings.route) }
+            )
+        }
+        composable(Screen.ElderSettings.route) {
+            ElderSettingScreen(
+                onOpenCalls = { navController.navigate(Screen.ElderCalls.route) },
+                onOpenMedications = { navController.navigate(Screen.ElderMedications.route) },
+                onLogout = {
+                    navController.navigate(Screen.PhoneAuth.route) {
+                        popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                    }
+                },
+                onRoleChanged = { role ->
+                    if (role == "Người chăm sóc") {
+                        navController.navigate(Screen.CaregiverActivity.route) {
+                            popUpTo(Screen.ElderCalls.route) { inclusive = true }
+                        }
                     }
                 }
             )

@@ -38,6 +38,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dearly.app.ui.elder.ElderFooter
+import com.dearly.app.ui.elder.ElderTab
 
 private val SettingsForest = Color(0xFF174D3B)
 private enum class SettingsOption { ACCOUNT, NOTIFICATIONS, LANGUAGE, SUPPORT }
@@ -47,7 +49,10 @@ fun CaregiverSettingsScreen(
     onOpenActivity: () -> Unit = {},
     onOpenCalls: () -> Unit = {},
     onOpenMedications: () -> Unit = {},
-    onLogout: () -> Unit = {}
+    onLogout: () -> Unit = {},
+    elderMode: Boolean = false,
+    onRoleChanged: (String) -> Unit = {},
+    initialAccountRole: String = "Người chăm sóc"
 ) {
     var editProfile by remember { mutableStateOf(false) }
     var savedRole by remember { mutableStateOf("Bác") }
@@ -70,27 +75,33 @@ fun CaregiverSettingsScreen(
             SettingsContent(
                 modifier = Modifier.weight(1f),
                 onEdit = { editProfile = true },
-                onLogout = onLogout
+                onLogout = onLogout,
+                onRoleChanged = onRoleChanged,
+                initialAccountRole = initialAccountRole
             )
         }
         if (!editProfile) {
-            CaregiverBottomNavigation(
-                selectedTab = CaregiverTab.SETTINGS,
-                onTabSelected = {
-                    if (it == CaregiverTab.ACTIVITY) onOpenActivity()
-                    if (it == CaregiverTab.CALLS) onOpenCalls()
-                    if (it == CaregiverTab.MEDICATIONS) onOpenMedications()
-                }
-            )
+            if (elderMode) {
+                ElderFooter(ElderTab.SETTINGS, onOpenCalls, onOpenMedications, {})
+            } else {
+                CaregiverBottomNavigation(
+                    selectedTab = CaregiverTab.SETTINGS,
+                    onTabSelected = {
+                        if (it == CaregiverTab.ACTIVITY) onOpenActivity()
+                        if (it == CaregiverTab.CALLS) onOpenCalls()
+                        if (it == CaregiverTab.MEDICATIONS) onOpenMedications()
+                    }
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun SettingsContent(modifier: Modifier, onEdit: () -> Unit, onLogout: () -> Unit) {
+private fun SettingsContent(modifier: Modifier, onEdit: () -> Unit, onLogout: () -> Unit, onRoleChanged: (String) -> Unit, initialAccountRole: String) {
     var activeOption by remember { mutableStateOf<SettingsOption?>(null) }
     var language by remember { mutableStateOf("Tiếng Việt") }
-    var role by remember { mutableStateOf("Người chăm sóc") }
+    var role by remember { mutableStateOf(initialAccountRole) }
     var showLogoutConfirmation by remember { mutableStateOf(false) }
     Column(modifier.padding(horizontal = 12.dp, vertical = 22.dp)) {
         Surface(color = Color.White, shape = RoundedCornerShape(12.dp), shadowElevation = 1.dp) {
@@ -125,7 +136,11 @@ private fun SettingsContent(modifier: Modifier, onEdit: () -> Unit, onLogout: ()
             language = language,
             onLanguageChange = { language = it },
             role = role,
-            onRoleChange = { role = it },
+            onRoleChange = { newRole ->
+                val changed = role != newRole
+                role = newRole
+                if (changed) onRoleChanged(newRole)
+            },
             onDismiss = { activeOption = null }
         )
     }
