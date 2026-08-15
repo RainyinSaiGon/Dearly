@@ -6,14 +6,16 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 // Claims represents the payload of a Dearly JWT.
 //
 // TODO(W2): Add any extra claims needed (e.g., device_id for multi-device logout).
 type Claims struct {
-	UserID string `json:"user_id"`
-	Role   string `json:"role"` // "ELDER" | "CAREGIVER"
+	UserID    string `json:"user_id"`
+	Role      string `json:"role"`
+	TokenType string `json:"token_type"`
 	jwt.RegisteredClaims
 }
 
@@ -33,40 +35,77 @@ func NewService() (*Service, error) {
 		return nil, fmt.Errorf("JWT_SECRET is not set")
 	}
 
-	// TODO(W2): Parse JWT_ACCESS_EXPIRY and JWT_REFRESH_EXPIRY from env
-	// (e.g., "15m", "168h") using time.ParseDuration
+	accessExpiry, err := durationFromEnv("JWT_ACCESS_EXPIRY", 15*time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	refreshExpiry, err := durationFromEnv("JWT_REFRESH_EXPIRY", 7*24*time.Hour)
+	if err != nil {
+		return nil, err
+	}
 	return &Service{
 		secret:        []byte(secret),
-		accessExpiry:  15 * time.Minute,
-		refreshExpiry: 7 * 24 * time.Hour,
+		accessExpiry:  accessExpiry,
+		refreshExpiry: refreshExpiry,
 	}, nil
 }
 
-// GenerateAccessToken signs a short-lived JWT for API access.
-//
-// TODO(W2): Implement using golang-jwt/jwt/v5.
 func (s *Service) GenerateAccessToken(userID, role string) (string, error) {
-	// TODO(W2): implement
-	// claims := Claims{UserID: userID, Role: role, RegisteredClaims: ...}
-	// return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.secret)
-	return "", fmt.Errorf("not implemented")
+	return s.generate(userID, role, "access", s.accessExpiry)
 }
 
-// GenerateRefreshToken signs a long-lived JWT for token rotation.
-//
-// TODO(W2): Same pattern as GenerateAccessToken but with refreshExpiry.
-func (s *Service) GenerateRefreshToken(userID string) (string, error) {
-	// TODO(W2): implement
-	return "", fmt.Errorf("not implemented")
+func (s *Service) GenerateRefreshToken(userID, role string) (string, error) {
+	return s.generate(userID, role, "refresh", s.refreshExpiry)
 }
 
-// ValidateToken parses and verifies a JWT string, returning its claims.
-//
-// TODO(W2):
-//  1. Parse token with jwt.ParseWithClaims
-//  2. Validate signing method is HMAC
-//  3. Return Claims on success, wrapped error on failure
 func (s *Service) ValidateToken(tokenStr string) (*Claims, error) {
-	// TODO(W2): implement
-	return nil, fmt.Errorf("not implemented")
+	claims := &Claims{}
+	token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
+		if token.Method != jwt.SigningMethodHS256 {
+			return nil, fmt.Errorf("unexpected signing method %q", token.Method.Alg())
+		}
+		return s.secret, nil
+	}, jwt.WithIssuer("dearly-api"), jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
+	if err != nil || !token.Valid {
+		return nil, fmt.Errorf("invalid token: %w", err)
+	}
+	return claims, nil
+}
+
+func (s *Service) RefreshExpiry() time.Duration {
+	return s.refreshExpiry
+}
+
+func (s *Service) AccessExpiry() time.Duration {
+	return s.accessExpiry
+}
+
+func (s *Service) generate(userID, role, tokenType string, expiry time.Duration) (string, error) {
+	now := time.Now().UTC()
+	claims := Claims{
+		UserID:    userID,
+		Role:      role,
+		TokenType: tokenType,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "dearly-api",
+			Subject:   userID,
+			ID:        uuid.NewString(),
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(expiry)),
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.secret)
+}
+
+func durationFromEnv(name string, fallback time.Duration) (time.Duration, error) {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a Go duration: %w", name, err)
+	}
+	return value, nil
 }

@@ -1,6 +1,6 @@
 # Dearly
 
-Elder-care mobile app · Kotlin + Jetpack Compose · Golang · ECAPA-TDNN · OpenAI
+Elder-care mobile app · Kotlin + Jetpack Compose · Go microservices · Kafka · ECAPA-TDNN · OpenAI
 
 ---
 
@@ -12,7 +12,7 @@ Dearly/
 │   ├── ci.yml         ← Continuous Integration Matrix with paths filtering
 │   └── release-android.yml ← Automatic installable APK packaging on tag push
 ├── android/           ← Android app (Kotlin 2.1.0 + Jetpack Compose + Hilt)
-├── backend/           ← REST API server (Go 1.22 + Gin + PostgreSQL)
+├── backend/           ← Go 1.25 public API + Kafka notification worker
 ├── ai-service/        ← Voice AI microservice (Python 3.11 + FastAPI + ECAPA-TDNN)
 ├── docker-compose.yml
 ├── .env.example
@@ -43,7 +43,8 @@ The project includes an optimized GitHub Actions matrix with path filtering ([`.
 |------|---------|
 | Android Studio | Ladybug (2024.2) or newer |
 | JDK | 21 (LTS) |
-| Go | 1.22+ |
+| Go | 1.25+ |
+| Kafka | 3.9+ |
 | Python | 3.11+ |
 | Docker Desktop | 4.x |
 | Docker Compose | v2 (bundled with Docker Desktop) |
@@ -91,7 +92,7 @@ cp .env.example .env
 3. Save the downloaded JSON as: `backend/firebase-sa.json`
 4. In your `.env`, set:
    ```
-   FIREBASE_SERVICE_ACCOUNT_PATH=/app/firebase-sa.json
+   FIREBASE_SERVICE_ACCOUNT_PATH=/run/secrets/firebase-sa.json
    ```
 
 ---
@@ -111,19 +112,21 @@ cp .env.example .env
 
 ```bash
 # From repo root
-docker-compose up --build
+docker compose up --build
 ```
 
 This starts:
 - **PostgreSQL** on `localhost:5432` (DB migrations run automatically)
 - **Redis** on `localhost:6379`
 - **Go API** on `localhost:8080`
-- **AI Service** on `localhost:5000`
+- **AI Service** privately on the Compose network at `ai-service:5000`
+- **Kafka** on the private Compose network
+- **Notification worker** as a Kafka consumer
 
 Verify everything is running:
 ```bash
 curl http://localhost:8080/health   # → {"status":"ok"}
-curl http://localhost:5000/health   # → {"status":"ok"}
+docker compose exec ai-service curl -f http://localhost:5000/health
 ```
 
 ---

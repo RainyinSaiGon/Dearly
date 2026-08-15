@@ -47,7 +47,7 @@ The app satisfies the academic project requirements:
 
 | Layer | Technology |
 |-------|-----------|
-| Language | Go 1.22+ |
+| Language | Go 1.25+ |
 | Framework | Gin or Fiber |
 | Database | PostgreSQL (primary) |
 | Cache | Redis |
@@ -298,10 +298,9 @@ The caregiver configures the elder's environment through a dedicated setup flow:
 ### Auth
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | /api/v1/auth/send-otp | Send OTP to phone |
-| POST | /api/v1/auth/verify-otp | Verify OTP, return JWT |
-| POST | /api/v1/auth/google | Google ID token -> JWT |
+| POST | /api/v1/auth/session | Firebase ID token + role -> Dearly JWT session |
 | POST | /api/v1/auth/refresh | Refresh JWT |
+| POST | /api/v1/auth/logout | Revoke refresh token |
 
 ### User & Profile
 | Method | Endpoint | Description |

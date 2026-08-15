@@ -10,5 +10,5 @@ CREATE TABLE IF NOT EXISTS call_logs (
     created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_call_logs_elder ON call_logs(elder_id);
-CREATE INDEX idx_call_logs_started ON call_logs(started_at);
+CREATE INDEX IF NOT EXISTS idx_call_logs_elder ON call_logs(elder_id);
+CREATE INDEX IF NOT EXISTS idx_call_logs_started ON call_logs(started_at);

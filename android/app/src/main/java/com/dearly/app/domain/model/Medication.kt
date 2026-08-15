@@ -25,3 +25,10 @@ data class MedicationLog(
     val status: DoseStatus = DoseStatus.PENDING,
     val takenAt: String? = null
 )
+
+data class NewMedication(
+    val name: String,
+    val dosage: String,
+    val timeSlots: List<String>,
+    val notes: String? = null
+)

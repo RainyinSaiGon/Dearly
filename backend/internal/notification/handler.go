@@ -3,38 +3,41 @@ package notification
 import (
 	"net/http"
 
+	"github.com/dearly/backend/internal/auth"
 	"github.com/gin-gonic/gin"
 )
 
-// Handler handles FCM token registration and notification listing.
 type Handler struct {
-	// TODO(W3): Inject NotificationService
+	service *Service
 }
 
-func NewHandler() *Handler { return &Handler{} }
+func NewHandler(service *Service) *Handler { return &Handler{service: service} }
 
 func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/register", h.RegisterToken)
 	rg.GET("", h.List)
 }
 
-// RegisterToken saves or updates the FCM device token for a user.
-// Called by the Android app on every launch or token refresh.
-//
-// TODO(W3):
-//  1. Bind JSON: { fcm_token: string }
-//  2. UPDATE users SET fcm_token=$1, updated_at=NOW() WHERE id=$2
-//  3. Return 200 OK
 func (h *Handler) RegisterToken(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "not_implemented"})
+	var request struct {
+		FCMToken string `json:"fcm_token" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
+		return
+	}
+	if err := h.service.RegisterToken(c.Request.Context(), auth.UserID(c), request.FCMToken); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "token_registration_failed"})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
-// List returns recent notifications for the authenticated user.
-//
-// TODO(W3):
-//  1. For now, return medication reminders from medication_logs
-//     WHERE scheduled_time >= NOW() - interval '24h'
-//  2. Future: add a dedicated notifications table if needed
 func (h *Handler) List(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "not_implemented"})
+	items, err := h.service.List(c.Request.Context(), auth.UserID(c))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "notifications_read_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, items)
 }
