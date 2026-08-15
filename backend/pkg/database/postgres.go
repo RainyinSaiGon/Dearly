@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"time"
 
 	// PostgreSQL driver — blank import registers it with database/sql
 	_ "github.com/lib/pq"
@@ -15,9 +16,9 @@ import (
 //  1. Call this from main.go during startup
 //  2. Pass the *sql.DB into every service that needs DB access
 //  3. Add connection pool tuning:
-//       db.SetMaxOpenConns(25)
-//       db.SetMaxIdleConns(5)
-//       db.SetConnMaxLifetime(5 * time.Minute)
+//     db.SetMaxOpenConns(25)
+//     db.SetMaxIdleConns(5)
+//     db.SetConnMaxLifetime(5 * time.Minute)
 func Connect() (*sql.DB, error) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -29,9 +30,12 @@ func Connect() (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to open database connection: %w", err)
 	}
 
-	// TODO(W2): Add pool settings here (see above)
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
 
 	if err := db.Ping(); err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("database ping failed: %w", err)
 	}
 

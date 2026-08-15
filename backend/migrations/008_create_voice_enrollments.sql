@@ -9,5 +9,5 @@ CREATE TABLE IF NOT EXISTS voice_enrollments (
     created_at          TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_voice_enrollment_user ON voice_enrollments(user_id);
-CREATE UNIQUE INDEX idx_voice_enrollment_user_phrase ON voice_enrollments(user_id, phrase_index);
+CREATE INDEX IF NOT EXISTS idx_voice_enrollment_user ON voice_enrollments(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_voice_enrollment_user_phrase ON voice_enrollments(user_id, phrase_index);

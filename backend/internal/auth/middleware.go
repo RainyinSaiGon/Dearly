@@ -4,38 +4,41 @@ import (
 	"net/http"
 	"strings"
 
+	jwtpkg "github.com/dearly/backend/pkg/jwt"
 	"github.com/gin-gonic/gin"
 )
 
-// JWTMiddleware validates the Authorization: Bearer <token> header.
-//
-// TODO(W2):
-//  1. Extract token from "Authorization: Bearer <token>" header
-//  2. Validate token with pkg/jwt (signature, expiry, issuer)
-//  3. Attach decoded user claims (userID, role) to the gin context
-//  4. Return 401 Unauthorized if token is missing, malformed, or expired
-//
-// Usage in main.go:
-//
-//	protected := v1.Group("/", JWTMiddleware())
-func JWTMiddleware() gin.HandlerFunc {
+const (
+	ContextUserID = "userID"
+	ContextRole   = "role"
+)
+
+func JWTMiddleware(jwtService *jwtpkg.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-			// TODO(W2): replace with real JWT validation
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"error": "missing_or_invalid_token",
-			})
+		header := c.GetHeader("Authorization")
+		if !strings.HasPrefix(header, "Bearer ") {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing_or_invalid_token"})
 			return
 		}
-
-		// TODO(W2): parse and validate the JWT
-		// tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
-		// claims, err := jwtService.ValidateToken(tokenStr)
-		// if err != nil { c.AbortWithStatusJSON(401, ...) }
-		// c.Set("userID", claims.UserID)
-		// c.Set("role", claims.Role)
-
+		claims, err := jwtService.ValidateToken(strings.TrimSpace(strings.TrimPrefix(header, "Bearer ")))
+		if err != nil || claims.TokenType != "access" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_or_expired_token"})
+			return
+		}
+		c.Set(ContextUserID, claims.UserID)
+		c.Set(ContextRole, claims.Role)
 		c.Next()
 	}
+}
+
+func UserID(c *gin.Context) string {
+	value, _ := c.Get(ContextUserID)
+	userID, _ := value.(string)
+	return userID
+}
+
+func Role(c *gin.Context) string {
+	value, _ := c.Get(ContextRole)
+	role, _ := value.(string)
+	return role
 }

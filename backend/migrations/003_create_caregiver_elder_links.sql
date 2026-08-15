@@ -8,5 +8,5 @@ CREATE TABLE IF NOT EXISTS caregiver_elder_links (
     UNIQUE(caregiver_id, elder_id)
 );
 
-CREATE INDEX idx_links_caregiver ON caregiver_elder_links(caregiver_id);
-CREATE INDEX idx_links_elder ON caregiver_elder_links(elder_id);
+CREATE INDEX IF NOT EXISTS idx_links_caregiver ON caregiver_elder_links(caregiver_id);
+CREATE INDEX IF NOT EXISTS idx_links_elder ON caregiver_elder_links(elder_id);

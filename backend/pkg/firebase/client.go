@@ -1,33 +1,39 @@
 package firebasepkg
 
-// InitApp initializes the Firebase Admin SDK app.
-//
-// TODO(W2):
-//  1. Import: firebase.google.com/go/v4
-//             firebase.google.com/go/v4/auth
-//             firebase.google.com/go/v4/messaging
-//
-//  2. Add the import to go.mod:
-//       go get firebase.google.com/go/v4
-//
-//  3. Implementation pattern:
-//
-//     import (
-//         firebase "firebase.google.com/go/v4"
-//         "google.golang.org/api/option"
-//     )
-//
-//     func InitApp() (*firebase.App, error) {
-//         saPath := os.Getenv("FIREBASE_SERVICE_ACCOUNT_PATH")
-//         opt := option.WithCredentialsFile(saPath)
-//         return firebase.NewApp(context.Background(), nil, opt)
-//     }
-//
-//  4. From the returned *firebase.App, call:
-//       app.Auth(ctx)      → *auth.Client     (for OTP verification)
-//       app.Messaging(ctx) → *messaging.Client (for FCM push)
-//
-//  5. Wire both clients into AuthService and NotificationService respectively.
+import (
+	"context"
+	"fmt"
+	"os"
 
-// Placeholder to keep the package non-empty until the real implementation is added.
-const Placeholder = "firebase package — implement in W2, see TODO above"
+	firebase "firebase.google.com/go/v4"
+	firebaseauth "firebase.google.com/go/v4/auth"
+	"firebase.google.com/go/v4/messaging"
+	"google.golang.org/api/option"
+)
+
+type Clients struct {
+	App       *firebase.App
+	Auth      *firebaseauth.Client
+	Messaging *messaging.Client
+}
+
+func InitClients(ctx context.Context) (*Clients, error) {
+	var options []option.ClientOption
+	if credentialsPath := os.Getenv("FIREBASE_SERVICE_ACCOUNT_PATH"); credentialsPath != "" {
+		options = append(options, option.WithCredentialsFile(credentialsPath))
+	}
+
+	app, err := firebase.NewApp(ctx, nil, options...)
+	if err != nil {
+		return nil, fmt.Errorf("initialize Firebase app: %w", err)
+	}
+	authClient, err := app.Auth(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("initialize Firebase Auth client: %w", err)
+	}
+	messagingClient, err := app.Messaging(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("initialize Firebase Messaging client: %w", err)
+	}
+	return &Clients{App: app, Auth: authClient, Messaging: messagingClient}, nil
+}

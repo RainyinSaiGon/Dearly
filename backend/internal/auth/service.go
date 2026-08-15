@@ -1,68 +1,201 @@
 package auth
 
-// Service contains the business logic for authentication.
-//
-// TODO(W2): Implement all methods below.
-// Dependencies to inject via constructor:
-//   - db        *sql.DB           (or a UserRepository interface)
-//   - redisClient redis.Client
-//   - firebaseApp *firebase.App
-//   - jwtService *jwt.Service
+import (
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"strings"
+
+	firebaseauth "firebase.google.com/go/v4/auth"
+	"github.com/dearly/backend/pkg/events"
+	jwtpkg "github.com/dearly/backend/pkg/jwt"
+	"github.com/redis/go-redis/v9"
+)
+
+var (
+	ErrInvalidRole  = errors.New("role must be ELDER or CAREGIVER")
+	ErrInvalidToken = errors.New("invalid authentication token")
+)
+
+type FirebaseTokenVerifier interface {
+	VerifyIDToken(ctx context.Context, idToken string) (*firebaseauth.Token, error)
+}
+
+type User struct {
+	ID          string  `json:"id"`
+	PhoneNumber *string `json:"phone_number,omitempty"`
+	Email       *string `json:"email,omitempty"`
+	Name        string  `json:"name"`
+	Role        string  `json:"role"`
+	AvatarURL   *string `json:"avatar_url,omitempty"`
+}
+
+type Session struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int64  `json:"expires_in"`
+	User         User   `json:"user"`
+}
+
 type Service struct {
-	// TODO(W2): add fields
+	db       *sql.DB
+	redis    *redis.Client
+	firebase FirebaseTokenVerifier
+	jwt      *jwtpkg.Service
+	events   events.Publisher
 }
 
-// NewService creates a new AuthService.
-// TODO(W2): Accept concrete dependencies and wire them here.
-func NewService() *Service {
-	return &Service{}
+func NewService(db *sql.DB, redisClient *redis.Client, firebase FirebaseTokenVerifier, jwtService *jwtpkg.Service, publisher events.Publisher) *Service {
+	return &Service{db: db, redis: redisClient, firebase: firebase, jwt: jwtService, events: publisher}
 }
 
-// SendOTP triggers an OTP SMS to the given phone number.
-//
-// TODO(W2):
-//  1. Rate-limit: reject if 3+ OTP requests in last 5 min (Redis INCR + TTL)
-//  2. Use Firebase Admin SDK phone auth to send verification SMS
-//  3. Return a session/verificationID to the client
-func (s *Service) SendOTP(phone string) error {
-	// TODO(W2): implement
-	return nil
+func (s *Service) CreateSession(ctx context.Context, firebaseIDToken, requestedRole string) (*Session, error) {
+	role := strings.ToUpper(strings.TrimSpace(requestedRole))
+	if role != "ELDER" && role != "CAREGIVER" {
+		return nil, ErrInvalidRole
+	}
+	token, err := s.firebase.VerifyIDToken(ctx, firebaseIDToken)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
+	}
+
+	phone := claimString(token.Claims, "phone_number")
+	email := claimString(token.Claims, "email")
+	name := claimString(token.Claims, "name")
+	avatar := claimString(token.Claims, "picture")
+	if name == "" {
+		switch {
+		case phone != "":
+			name = phone
+		case email != "":
+			name = strings.Split(email, "@")[0]
+		default:
+			name = "Dearly user"
+		}
+	}
+
+	user, err := s.upsertUser(ctx, token.UID, phone, email, name, role, avatar)
+	if err != nil {
+		return nil, err
+	}
+	if role == "ELDER" {
+		if _, err := s.db.ExecContext(ctx, `INSERT INTO elder_profiles(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING`, user.ID); err != nil {
+			return nil, fmt.Errorf("create elder profile: %w", err)
+		}
+	}
+
+	session, err := s.issueSession(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+	_ = s.events.Publish(ctx, "auth.session.created", user.ID, map[string]any{"user_id": user.ID, "role": user.Role})
+	return session, nil
 }
 
-// VerifyOTP validates the OTP, upserts the user, and returns JWT tokens.
-//
-// TODO(W2):
-//  1. Verify the Firebase ID token with firebase.Auth.VerifyIDToken()
-//  2. Extract phone from token claims
-//  3. Upsert user in DB: INSERT ... ON CONFLICT (phone_number) DO UPDATE
-//  4. Generate access + refresh JWTs (pkg/jwt)
-//  5. Store refresh token hash in Redis (key: "refresh:<userID>", TTL: 7d)
-//  6. Return access token, refresh token, and user struct
-func (s *Service) VerifyOTP(firebaseIDToken string) (accessToken, refreshToken string, err error) {
-	// TODO(W2): implement
-	return "", "", nil
+func (s *Service) Refresh(ctx context.Context, refreshToken string) (*Session, error) {
+	claims, err := s.jwt.ValidateToken(refreshToken)
+	if err != nil || claims.TokenType != "refresh" {
+		return nil, ErrInvalidToken
+	}
+	storedHash, err := s.redis.Get(ctx, refreshKey(claims.ID)).Result()
+	if err != nil {
+		return nil, ErrInvalidToken
+	}
+	if storedHash != tokenHash(refreshToken) {
+		return nil, ErrInvalidToken
+	}
+
+	user, err := s.getUser(ctx, claims.UserID)
+	if err != nil {
+		return nil, err
+	}
+	_ = s.redis.Del(ctx, refreshKey(claims.ID)).Err()
+	return s.issueSession(ctx, user)
 }
 
-// GoogleSignIn verifies a Google ID token and upserts the user.
-//
-// TODO(W2):
-//  1. Verify token via firebase.Auth.VerifyIDToken()
-//  2. Extract email, name, picture from token claims
-//  3. Upsert user in DB by email
-//  4. Generate and return JWT tokens
-func (s *Service) GoogleSignIn(googleIDToken string) (accessToken, refreshToken string, err error) {
-	// TODO(W2): implement
-	return "", "", nil
+func (s *Service) Revoke(ctx context.Context, refreshToken string) error {
+	claims, err := s.jwt.ValidateToken(refreshToken)
+	if err != nil || claims.TokenType != "refresh" {
+		return ErrInvalidToken
+	}
+	return s.redis.Del(ctx, refreshKey(claims.ID)).Err()
 }
 
-// RefreshToken validates a refresh token and issues a new access token.
-//
-// TODO(W2):
-//  1. Parse the refresh token JWT and validate signature + expiry
-//  2. Look up token hash in Redis — reject if revoked
-//  3. Generate a new access token (15min)
-//  4. Optional: rotate refresh token and update Redis
-func (s *Service) RefreshToken(refreshToken string) (newAccessToken string, err error) {
-	// TODO(W2): implement
-	return "", nil
+func (s *Service) issueSession(ctx context.Context, user User) (*Session, error) {
+	access, err := s.jwt.GenerateAccessToken(user.ID, user.Role)
+	if err != nil {
+		return nil, err
+	}
+	refresh, err := s.jwt.GenerateRefreshToken(user.ID, user.Role)
+	if err != nil {
+		return nil, err
+	}
+	claims, err := s.jwt.ValidateToken(refresh)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.redis.Set(ctx, refreshKey(claims.ID), tokenHash(refresh), s.jwt.RefreshExpiry()).Err(); err != nil {
+		return nil, fmt.Errorf("store refresh token: %w", err)
+	}
+	return &Session{
+		AccessToken: access, RefreshToken: refresh,
+		ExpiresIn: int64(s.jwt.AccessExpiry().Seconds()), User: user,
+	}, nil
+}
+
+func (s *Service) upsertUser(ctx context.Context, uid, phone, email, name, role, avatar string) (User, error) {
+	var user User
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE users SET firebase_uid=$1, updated_at=NOW()
+		WHERE firebase_uid IS NULL AND (
+			(NULLIF($2,'') IS NOT NULL AND phone_number=NULLIF($2,'')) OR
+			(NULLIF($3,'') IS NOT NULL AND email=NULLIF($3,''))
+		)`, uid, phone, email); err != nil {
+		return User{}, fmt.Errorf("link existing Firebase user: %w", err)
+	}
+	err := s.db.QueryRowContext(ctx, `
+		INSERT INTO users(firebase_uid, phone_number, email, name, role, avatar_url)
+		VALUES($1, NULLIF($2,''), NULLIF($3,''), $4, $5, NULLIF($6,''))
+		ON CONFLICT(firebase_uid) DO UPDATE SET
+			phone_number=COALESCE(EXCLUDED.phone_number, users.phone_number),
+			email=COALESCE(EXCLUDED.email, users.email),
+			name=CASE WHEN users.name IN ('', 'Dearly user') THEN EXCLUDED.name ELSE users.name END,
+			avatar_url=COALESCE(EXCLUDED.avatar_url, users.avatar_url),
+			updated_at=NOW()
+		RETURNING id::text, phone_number, email, name, role, avatar_url`,
+		uid, phone, email, name, role, avatar,
+	).Scan(&user.ID, &user.PhoneNumber, &user.Email, &user.Name, &user.Role, &user.AvatarURL)
+	if err != nil {
+		return User{}, fmt.Errorf("upsert user: %w", err)
+	}
+	return user, nil
+}
+
+func (s *Service) getUser(ctx context.Context, userID string) (User, error) {
+	var user User
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id::text, phone_number, email, name, role, avatar_url
+		FROM users WHERE id=$1`, userID,
+	).Scan(&user.ID, &user.PhoneNumber, &user.Email, &user.Name, &user.Role, &user.AvatarURL)
+	if err != nil {
+		return User{}, fmt.Errorf("get user: %w", err)
+	}
+	return user, nil
+}
+
+func claimString(claims map[string]interface{}, name string) string {
+	value, _ := claims[name].(string)
+	return value
+}
+
+func tokenHash(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+func refreshKey(jti string) string {
+	return "refresh:" + jti
 }

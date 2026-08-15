@@ -11,6 +11,6 @@ CREATE TABLE IF NOT EXISTS medication_logs (
     created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_med_logs_medication ON medication_logs(medication_id);
-CREATE INDEX idx_med_logs_status ON medication_logs(status);
-CREATE INDEX idx_med_logs_scheduled ON medication_logs(scheduled_time);
+CREATE INDEX IF NOT EXISTS idx_med_logs_medication ON medication_logs(medication_id);
+CREATE INDEX IF NOT EXISTS idx_med_logs_status ON medication_logs(status);
+CREATE INDEX IF NOT EXISTS idx_med_logs_scheduled ON medication_logs(scheduled_time);

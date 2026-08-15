@@ -1,5 +1,4 @@
 services:
-
   postgres:
     image: postgres:16-alpine
     container_name: dearly-postgres
@@ -9,7 +8,6 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend/migrations:/docker-entrypoint-initdb.d   # auto-runs on first start
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -28,42 +26,89 @@ services:
       timeout: 5s
       retries: 5
 
+  kafka:
+    image: apache/kafka:3.9.1
+    container_name: dearly-kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
   go-api:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      args:
+        SERVICE: server
     container_name: dearly-go-api
     restart: unless-stopped
     env_file: .env
+    environment:
+      MIGRATIONS_PATH: /app/migrations
+      KAFKA_BROKERS: kafka:9092
     ports:
       - "8080:8080"
+    volumes:
+      - ./backend/firebase-sa.json:/run/secrets/firebase-sa.json:ro
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
       ai-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  notification-worker:
+    build:
+      context: ./backend
+      args:
+        SERVICE: notification-worker
+    container_name: dearly-notification-worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      KAFKA_BROKERS: kafka:9092
+    volumes:
+      - ./backend/firebase-sa.json:/run/secrets/firebase-sa.json:ro
+    depends_on:
+      go-api:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
 
   ai-service:
     build:
       context: ./ai-service
-      dockerfile: Dockerfile
     container_name: dearly-ai-service
     restart: unless-stopped
     env_file: .env
-    ports:
-      - "5000:5000"
-    # Uncomment the lines below if your machine has an NVIDIA GPU:
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
+    expose:
+      - "5000"
     volumes:
-      - ./models:/models    # place ECAPA checkpoint here: ./models/ecapa_voxceleb2.ckpt
+      - ./models:/models
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 15s
@@ -72,3 +117,4 @@ services:
 
 volumes:
   postgres_data:
+  kafka_data:

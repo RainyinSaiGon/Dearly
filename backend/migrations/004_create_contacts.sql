@@ -12,4 +12,4 @@ CREATE TABLE IF NOT EXISTS contacts (
     updated_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_contacts_elder ON contacts(elder_id);
+CREATE INDEX IF NOT EXISTS idx_contacts_elder ON contacts(elder_id);

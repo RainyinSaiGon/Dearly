@@ -1,23 +1,16 @@
-# ─── Build stage ──────────────────────────────────────────────────
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
-WORKDIR /app
-
-# Cache module downloads
-COPY go.mod go.sum* ./
-RUN go mod download 2>/dev/null || true
-
+ARG SERVICE=server
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o /dearly-api ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /dearly-service ./cmd/${SERVICE}
 
-# ─── Runtime stage ────────────────────────────────────────────────
-FROM alpine:3.20
-
+FROM alpine:3.22
 RUN apk add --no-cache ca-certificates tzdata
-
 WORKDIR /app
-COPY --from=builder /dearly-api .
-
+COPY --from=builder /dearly-service ./dearly-service
+COPY migrations ./migrations
 EXPOSE 8080
-
-ENTRYPOINT ["./dearly-api"]
+ENTRYPOINT ["./dearly-service"]

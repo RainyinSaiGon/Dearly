@@ -10,4 +10,4 @@ CREATE TABLE IF NOT EXISTS medications (
     updated_at          TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_medications_elder ON medications(elder_id);
+CREATE INDEX IF NOT EXISTS idx_medications_elder ON medications(elder_id);

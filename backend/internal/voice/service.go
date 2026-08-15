@@ -1,71 +1,219 @@
 package voice
 
-import "net/http"
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"encoding/binary"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
-// Service handles the business logic for voice enrollment and verification.
-// It acts as a proxy between the Go API and the Python ai-service.
-//
-// TODO(W4-W5): Implement all methods.
+	"github.com/dearly/backend/pkg/events"
+)
+
 type Service struct {
-	// TODO(W4): inject db *sql.DB, aiServiceURL string, httpClient *http.Client
+	db           *sql.DB
 	aiServiceURL string
 	httpClient   *http.Client
+	events       events.Publisher
 }
 
-func NewService(aiServiceURL string) *Service {
+func NewService(db *sql.DB, aiServiceURL string, publisher events.Publisher) *Service {
 	return &Service{
-		aiServiceURL: aiServiceURL,
-		httpClient:   &http.Client{},
+		db: db, aiServiceURL: strings.TrimRight(aiServiceURL, "/"),
+		httpClient: &http.Client{Timeout: 90 * time.Second}, events: publisher,
 	}
 }
 
-// EnrollPhrase forwards one audio phrase to ai-service and stores the embedding.
-//
-// TODO(W4):
-//  1. POST audio to aiServiceURL + "/enroll" (multipart form)
-//  2. Parse embedding_vector ([]float32) from JSON response
-//  3. Serialize embedding to []byte for BYTEA storage
-//  4. UPSERT voice_enrollments (user_id, phrase_index, embedding_vector)
-//  5. Return enrolled_count (total phrases recorded so far)
-func (s *Service) EnrollPhrase(userID string, phraseIndex int, audioBytes []byte) (int, error) {
-	// TODO(W4): implement
-	return 0, nil
+func (s *Service) EnrollPhrase(ctx context.Context, userID string, phraseIndex int, filename string, audioBytes []byte) (int, error) {
+	if phraseIndex < 0 || phraseIndex > 4 {
+		return 0, errors.New("phrase_index must be between 0 and 4")
+	}
+	fields := map[string]string{"phrase_index": strconv.Itoa(phraseIndex)}
+	response, err := s.multipart(ctx, "/enroll/", filename, audioBytes, fields, nil)
+	if err != nil {
+		return 0, err
+	}
+	var result struct {
+		Embedding []float32 `json:"embedding"`
+	}
+	if err := json.Unmarshal(response, &result); err != nil || len(result.Embedding) == 0 {
+		return 0, errors.New("AI enrollment response did not contain an embedding")
+	}
+	serialized := encodeVector(result.Embedding)
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO voice_enrollments(user_id, phrase_index, embedding_vector)
+		VALUES($1,$2,$3)
+		ON CONFLICT(user_id, phrase_index) DO UPDATE SET embedding_vector=$3, created_at=NOW()`,
+		userID, phraseIndex, serialized)
+	if err != nil {
+		return 0, err
+	}
+	var count int
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM voice_enrollments WHERE user_id=$1 AND phrase_index BETWEEN 0 AND 4`,
+		userID).Scan(&count); err != nil {
+		return 0, err
+	}
+	if count == 5 {
+		if err := s.ComputeAverageEmbedding(ctx, userID); err != nil {
+			return 0, err
+		}
+	}
+	_ = s.events.Publish(ctx, "voice.phrase.enrolled", userID, map[string]any{"phrase_index": phraseIndex, "enrolled_count": count})
+	return count, nil
 }
 
-// ComputeAverageEmbedding averages all 5 phrase embeddings into a single vector.
-// Should be called after phrase_index 4 is successfully enrolled.
-//
-// TODO(W4):
-//  1. SELECT embedding_vector FROM voice_enrollments WHERE user_id=$1 ORDER BY phrase_index
-//  2. Deserialize each BYTEA to []float32
-//  3. Compute element-wise average across all 5 vectors
-//  4. Store result in a "master" enrollment row (phrase_index = -1 or a separate column)
-func (s *Service) ComputeAverageEmbedding(userID string) error {
-	// TODO(W4): implement
-	return nil
+func (s *Service) ComputeAverageEmbedding(ctx context.Context, userID string) error {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT embedding_vector FROM voice_enrollments
+		WHERE user_id=$1 AND phrase_index BETWEEN 0 AND 4 ORDER BY phrase_index`, userID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var vectors [][]float32
+	for rows.Next() {
+		var encoded []byte
+		if err := rows.Scan(&encoded); err != nil {
+			return err
+		}
+		vector, err := decodeVector(encoded)
+		if err != nil {
+			return err
+		}
+		vectors = append(vectors, vector)
+	}
+	if len(vectors) != 5 {
+		return errors.New("five enrollment phrases are required")
+	}
+	dimension := len(vectors[0])
+	average := make([]float32, dimension)
+	for _, vector := range vectors {
+		if len(vector) != dimension {
+			return errors.New("embedding dimensions do not match")
+		}
+		for index, value := range vector {
+			average[index] += value / float32(len(vectors))
+		}
+	}
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO voice_enrollments(user_id, phrase_index, embedding_vector)
+		VALUES($1,-1,$2)
+		ON CONFLICT(user_id, phrase_index) DO UPDATE SET embedding_vector=$2, created_at=NOW()`,
+		userID, encodeVector(average))
+	return err
 }
 
-// Verify compares incoming audio against the user's stored average embedding.
-// Threshold: cosine similarity >= 0.80 → pass.
-//
-// TODO(W5):
-//  1. Load average embedding from voice_enrollments WHERE user_id=$1 AND phrase_index=-1
-//  2. POST audio to aiServiceURL + "/verify" with the stored embedding
-//  3. ai-service computes cosine similarity and returns { passed, score }
-//  4. Log verification attempt (for audit; do NOT store audio)
-func (s *Service) Verify(userID string, audioBytes []byte) (passed bool, score float64, err error) {
-	// TODO(W5): implement
-	return false, 0, nil
+func (s *Service) Verify(ctx context.Context, userID, filename string, audioBytes []byte) (bool, float64, error) {
+	var encoded []byte
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT embedding_vector FROM voice_enrollments WHERE user_id=$1 AND phrase_index=-1`,
+		userID).Scan(&encoded); err != nil {
+		return false, 0, fmt.Errorf("load enrollment: %w", err)
+	}
+	vector, err := decodeVector(encoded)
+	if err != nil {
+		return false, 0, err
+	}
+	vectorJSON, _ := json.Marshal(vector)
+	response, err := s.multipart(ctx, "/verify/", filename, audioBytes,
+		map[string]string{"enrollment_embedding": string(vectorJSON)}, nil)
+	if err != nil {
+		return false, 0, err
+	}
+	var result struct {
+		Passed bool    `json:"passed"`
+		Score  float64 `json:"score"`
+	}
+	if err := json.Unmarshal(response, &result); err != nil {
+		return false, 0, err
+	}
+	_ = s.events.Publish(ctx, "voice.verification.completed", userID, map[string]any{"passed": result.Passed, "score": result.Score})
+	return result.Passed, result.Score, nil
 }
 
-// Query forwards audio to the full voice assistant pipeline.
-//
-// TODO(W5):
-//  1. POST audio to aiServiceURL + "/query" with userID header
-//  2. Parse response: transcript, intent, response_text, response_audio_url, sv_required, sv_passed
-//  3. If sv_required is true, the response from ai-service already handles SV internally
-//  4. Store query log for caregiver activity view
-func (s *Service) Query(userID string, audioBytes []byte) (map[string]interface{}, error) {
-	// TODO(W5): implement
-	return nil, nil
+func (s *Service) Query(ctx context.Context, userID, filename string, audioBytes []byte) (map[string]interface{}, error) {
+	response, err := s.multipart(ctx, "/query/", filename, audioBytes, nil, map[string]string{"X-User-ID": userID})
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(response, &result); err != nil {
+		return nil, err
+	}
+	_ = s.events.Publish(ctx, "voice.query.completed", userID, map[string]any{
+		"intent": result["intent"], "sv_required": result["sv_required"], "sv_passed": result["sv_passed"],
+	})
+	return result, nil
+}
+
+func (s *Service) Reset(ctx context.Context, userID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM voice_enrollments WHERE user_id=$1`, userID)
+	return err
+}
+
+func (s *Service) multipart(ctx context.Context, path, filename string, audio []byte, fields, headers map[string]string) ([]byte, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("audio", filename)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := part.Write(audio); err != nil {
+		return nil, err
+	}
+	for key, value := range fields {
+		if err := writer.WriteField(key, value); err != nil {
+			return nil, err
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, s.aiServiceURL+path, &body)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	for key, value := range headers {
+		request.Header.Set(key, value)
+	}
+	response, err := s.httpClient.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("AI service request: %w", err)
+	}
+	defer response.Body.Close()
+	responseBody, err := io.ReadAll(io.LimitReader(response.Body, 10<<20))
+	if err != nil {
+		return nil, err
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, fmt.Errorf("AI service returned %d: %s", response.StatusCode, string(responseBody))
+	}
+	return responseBody, nil
+}
+
+func encodeVector(vector []float32) []byte {
+	buffer := bytes.NewBuffer(make([]byte, 0, len(vector)*4))
+	for _, value := range vector {
+		_ = binary.Write(buffer, binary.LittleEndian, value)
+	}
+	return buffer.Bytes()
+}
+
+func decodeVector(encoded []byte) ([]float32, error) {
+	if len(encoded)%4 != 0 {
+		return nil, errors.New("invalid embedding bytes")
+	}
+	vector := make([]float32, len(encoded)/4)
+	err := binary.Read(bytes.NewReader(encoded), binary.LittleEndian, &vector)
+	return vector, err
 }
