@@ -5,8 +5,11 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/dearly/backend/internal/auth"
 	"github.com/gin-gonic/gin"
 )
+
+const markTakenIntent = "MARK_TAKEN"
 
 type elderResolver interface {
 	Resolve(c *gin.Context, requested string) (string, error)
@@ -15,10 +18,15 @@ type elderResolver interface {
 type Handler struct {
 	service  *Service
 	resolver elderResolver
+	grants   verificationGrantConsumer
 }
 
-func NewHandler(service *Service, resolver elderResolver) *Handler {
-	return &Handler{service: service, resolver: resolver}
+type verificationGrantConsumer interface {
+	ConsumeVerificationGrant(ctx context.Context, userID, intent, grant string) error
+}
+
+func NewHandler(service *Service, resolver elderResolver, grants verificationGrantConsumer) *Handler {
+	return &Handler{service: service, resolver: resolver, grants: grants}
 }
 
 func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
@@ -101,14 +109,18 @@ type doseRequest struct {
 }
 
 func (h *Handler) MarkTaken(c *gin.Context) {
-	h.changeDose(c, h.service.MarkTaken)
+	h.changeDose(c, h.service.MarkTaken, true)
 }
 
 func (h *Handler) Snooze(c *gin.Context) {
-	h.changeDose(c, h.service.Snooze)
+	h.changeDose(c, h.service.Snooze, false)
 }
 
-func (h *Handler) changeDose(c *gin.Context, change func(c context.Context, medicationID, elderID, scheduledTime string) error) {
+func (h *Handler) changeDose(
+	c *gin.Context,
+	change func(c context.Context, medicationID, elderID, scheduledTime string) error,
+	requiresVerification bool,
+) {
 	var request doseRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
@@ -118,6 +130,22 @@ func (h *Handler) changeDose(c *gin.Context, change func(c context.Context, medi
 	if err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "elder_access_denied"})
 		return
+	}
+	if requiresVerification {
+		if auth.Role(c) != "ELDER" || elderID != auth.UserID(c) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "elder_voice_verification_required"})
+			return
+		}
+		if h.grants == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "voice_verification_unavailable"})
+			return
+		}
+		if err := h.grants.ConsumeVerificationGrant(
+			c.Request.Context(), auth.UserID(c), markTakenIntent, c.GetHeader("X-Voice-Grant"),
+		); err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "voice_verification_required"})
+			return
+		}
 	}
 	if err := change(c.Request.Context(), c.Param("id"), elderID, request.ScheduledTime); err != nil {
 		writeError(c, "dose_update_failed", err)

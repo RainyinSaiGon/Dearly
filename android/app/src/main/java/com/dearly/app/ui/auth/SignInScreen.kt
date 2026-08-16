@@ -23,7 +23,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -42,7 +41,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -52,9 +50,14 @@ private val SignInGreen = Color(0xFF1B4332)
 private val SignInBackground = Color(0xFFF8F9F5)
 
 @Composable
-fun SignInScreen(onContinue: () -> Unit, onSignUp: () -> Unit) {
+fun SignInScreen(
+    onContinue: (String) -> Unit,
+    onGoogleSignIn: () -> Unit,
+    onSignUp: () -> Unit,
+    busy: Boolean = false,
+    error: String? = null
+) {
     var phoneNumber by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
 
     Box(
         modifier = Modifier
@@ -119,23 +122,10 @@ fun SignInScreen(onContinue: () -> Unit, onSignUp: () -> Unit) {
                     placeholder = "Nhập số điện thoại",
                     icon = Icons.Default.Phone
                 )
-                SignInField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = "Mật khẩu",
-                    placeholder = "Nhập mật khẩu",
-                    icon = Icons.Default.Lock,
-                    password = true
-                )
-                Text(
-                    text = "Quên mật khẩu?",
-                    color = Color(0xFF2C694E),
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.align(Alignment.End)
-                )
+                error?.let { Text(it, color = Color(0xFFC62828), fontSize = 13.sp) }
                 Button(
-                    onClick = onContinue,
+                    onClick = { onContinue(phoneNumber.trim()) },
+                    enabled = !busy && phoneNumber.isNotBlank(),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
@@ -146,7 +136,8 @@ fun SignInScreen(onContinue: () -> Unit, onSignUp: () -> Unit) {
                 }
                 DividerLabel()
                 OutlinedButton(
-                    onClick = onContinue,
+                    onClick = onGoogleSignIn,
+                    enabled = !busy,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp),
@@ -219,8 +210,7 @@ private fun SignInField(
     onValueChange: (String) -> Unit,
     label: String,
     placeholder: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    password: Boolean = false
+    icon: androidx.compose.ui.graphics.vector.ImageVector
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(label, color = Color(0xFF41474E), fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -230,7 +220,6 @@ private fun SignInField(
             placeholder = { Text(placeholder, color = Color(0xFF6B7280), fontSize = 15.sp) },
             leadingIcon = { Icon(icon, null, tint = SignInGreen, modifier = Modifier.size(20.dp)) },
             singleLine = true,
-            visualTransformation = if (password) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),

@@ -130,16 +130,15 @@ freeze_until_epoch: 5
 ### 3.5 Training Command
 
 ```bash
-# Use the SpeechBrain VoxCeleb recipe as base:
-# https://github.com/speechbrain/speechbrain/tree/develop/recipes/VoxCeleb/SpeakerRec
+# From ai-service/. Generate manifests and train from the YAML configuration.
+python train/finetune_ecapa.py train/hparams/train_ecapa.yaml --prepare
 
-python train/finetune_ecapa.py hparams/train_ecapa.yaml \
-    --data_folder=data/voxvietnam \
-    --pretrained_path=pretrained_models/spkrec-ecapa-voxceleb
+# Best checkpoint saved to results/ECAPA/best_model.ckpt
+cp results/ECAPA/best_model.ckpt ../models/ecapa_dearly.ckpt
 
-# Best checkpoint saved to: results/ECAPA/XXXXXXXXXX/save/best_model.ckpt
-# Copy it:
-cp results/ECAPA/*/save/best_model.ckpt models/ecapa_dearly.ckpt
+# Evaluate the speaker-disjoint test split.
+python -m train.eval data/voxvietnam/test --trials 10000 \
+    --output results/ECAPA/evaluation.json
 ```
 
 ### 3.6 Google Colab Option (No Local GPU)
@@ -167,6 +166,11 @@ drive.mount('/content/drive')
 ### 4.2 minDCF
 - Minimum Detection Cost Function — weighted combination of FA + FR errors.
 - Always reported alongside EER in speaker verification papers.
+
+### 4.3 SID Top-1 Accuracy
+- Enroll up to five recordings per test speaker, then identify every remaining recording.
+- Report the fraction whose highest cosine-scoring profile is the correct speaker.
+- `train/eval.py` computes this together with EER and minDCF using one embedding cache.
 
 ### 4.3 Computing Metrics with SpeechBrain
 
@@ -208,17 +212,28 @@ ai-service:
 **Already wired in .env.example:**
 ```
 ECAPA_MODEL_PATH=/models/ecapa_dearly.ckpt
+ECAPA_MODEL_SOURCE=speechbrain/spkrec-ecapa-voxceleb
 SV_COSINE_THRESHOLD=0.80
 ```
+
+`ECAPA_MODEL_PATH` is optional. Leave it empty to run the pretrained SpeechBrain source;
+set it to the fine-tuned checkpoint to layer the Vietnamese backbone weights on that source.
 
 > Upload `ecapa_dearly.ckpt` to Google Drive (too large for git).
 > Submit the Drive link with your report ZIP as per submission guidelines.
 
 ---
 
-## 6. Implementing `ecapa.py` (W4)
+## 6. Runtime Integration
 
-Replace the skeleton in [ecapa.py](file:///c:/Users/Vu/schoolProject/Dearly/ai-service/app/models/ecapa.py) with this:
+The production wrapper is implemented in `app/models/ecapa.py`. It lazily loads one
+SpeechBrain classifier, converts recordings to mono 16 kHz audio, validates finite embedding
+dimensions, and provides cosine-based 1-to-1 SV and 1-to-N SID. A file in
+`ECAPA_MODEL_PATH` loads the fine-tuned `embedding_model` state; otherwise the configured
+SpeechBrain source is used directly. The HTTP routes use bounded temporary uploads and clean
+them after inference.
+
+The following excerpt documents the core inference shape:
 
 ```python
 import os
@@ -301,8 +316,9 @@ class EcapaTDNN:
 [ ] Generate 10,000 trial pairs from test set
 [ ] Compute EER + minDCF, record numbers for report
 [ ] Copy best_model.ckpt → Dearly/models/ecapa_dearly.ckpt
-[ ] Implement ecapa.py with singleton pattern above
-[ ] Test locally: python -c "from app.models.ecapa import EcapaTDNN; print(EcapaTDNN())"
+[x] Implement ecapa.py with singleton pattern above
+[x] Add enrollment, verification, identification, and query contract tests with injected models
+[ ] Test a real checkpoint locally: python -c "from app.models.ecapa import EcapaTDNN; print(EcapaTDNN.shared())"
 [ ] Test end-to-end via Docker: enroll 5 phrases → verify same speaker → verify different speaker
 ```
 
@@ -339,10 +355,10 @@ Hardware: [your Colab/GPU info]
 Protocol: 10,000 trial pairs (5,000 genuine + 5,000 impostor) from test set
 Metrics: EER, minDCF
 
-| System                    | EER (%) | minDCF |
-|---------------------------|---------|--------|
-| ECAPA-TDNN (VoxCeleb2)    | X.XX    | X.XXXX |
-| + Fine-tuned (VoxVietnam) | X.XX    | X.XXXX |
+| System                    | EER (%) | minDCF | SID Top-1 (%) |
+|---------------------------|---------|--------|-----------------|
+| ECAPA-TDNN (VoxCeleb2)    | X.XX    | X.XXXX | XX.XX           |
+| + Fine-tuned (VoxVietnam) | X.XX    | X.XXXX | XX.XX           |
 
 Deployment threshold: cosine similarity ≥ 0.80
 (Tuned lower than EER threshold to reduce false rejections for elderly users)

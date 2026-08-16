@@ -4,7 +4,6 @@
 # ──────────────────────────────────────────────────────────────────
 
 seed: 42
-__set_seed: !apply:torch.manual_seed [!ref <seed>]
 
 # ── Paths ──────────────────────────────────────────────────────────
 data_folder: data/voxvietnam       # root of the dataset
@@ -13,6 +12,7 @@ val_csv:     data/val.csv
 test_csv:    data/test.csv
 output_folder: results/ECAPA       # checkpoints + logs saved here
 pretrained_path: pretrained_models/spkrec-ecapa-voxceleb
+pretrained_source: speechbrain/spkrec-ecapa-voxceleb
 
 # ── Training schedule ──────────────────────────────────────────────
 n_epochs: 20
@@ -28,25 +28,12 @@ lr_final: 0.000001                 # cosine annealing end LR
 margin: 0.2
 scale:  30
 
-# ── Speaker count ─────────────────────────────────────────────────
-# TODO(W4): Set this to the actual number of speakers in your TRAIN split.
-# Check: len(set(df["speaker_id"])) on your train.csv
-out_n_neurons: 80                  # ~80% of VoxVietnam speakers
-
 # ── Audio settings ────────────────────────────────────────────────
 sample_rate: 16000
 sentence_len: 3.0                  # seconds per training chunk (random crop)
 shuffle: True
 
-# ── Dataloader ────────────────────────────────────────────────────
-train_dataloader_options:
-    batch_size: !ref <batch_size>
-    num_workers: 4
-    shuffle: !ref <shuffle>
-
-valid_dataloader_options:
-    batch_size: !ref <batch_size>
-    num_workers: 2
+num_workers: 4
 
 # ── Model architecture ────────────────────────────────────────────
 # Using SpeechBrain's built-in ECAPA-TDNN
@@ -54,5 +41,5 @@ valid_dataloader_options:
 embedding_dim: 192
 
 # ── Checkpointing ─────────────────────────────────────────────────
-# Best checkpoint = lowest validation loss
-# Saved to: <output_folder>/<seed>/save/
+# Best checkpoint = lowest speaker-disjoint verification loss.
+# Saved to: <output_folder>/best_model.ckpt

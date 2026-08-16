@@ -1,6 +1,7 @@
 package user
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/dearly/backend/internal/auth"
@@ -17,6 +18,70 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("/me", h.GetMe)
 	rg.PUT("/me", h.UpdateMe)
 	rg.GET("/me/elders", h.GetElders)
+	rg.POST("/me/link-code", h.CreateLinkCode)
+	rg.POST("/me/elders", h.LinkElder)
+	rg.DELETE("/me/elders/:elderID", h.UnlinkElder)
+}
+
+func (h *Handler) CreateLinkCode(c *gin.Context) {
+	if auth.Role(c) != "ELDER" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "elder_required"})
+		return
+	}
+	code, err := h.service.CreateCaregiverLinkCode(c.Request.Context(), auth.UserID(c))
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, ErrRoleNotAllowed) {
+			status = http.StatusForbidden
+		}
+		c.JSON(status, gin.H{"error": "link_code_create_failed"})
+		return
+	}
+	c.JSON(http.StatusCreated, code)
+}
+
+func (h *Handler) LinkElder(c *gin.Context) {
+	if auth.Role(c) != "CAREGIVER" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "caregiver_required"})
+		return
+	}
+	var request struct {
+		LinkCode string `json:"link_code" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
+		return
+	}
+	profile, err := h.service.LinkElder(c.Request.Context(), auth.UserID(c), request.LinkCode)
+	if err != nil {
+		status := http.StatusInternalServerError
+		code := "elder_link_failed"
+		if errors.Is(err, ErrInvalidLinkCode) {
+			status, code = http.StatusBadRequest, "invalid_or_expired_link_code"
+		} else if errors.Is(err, ErrRoleNotAllowed) {
+			status, code = http.StatusForbidden, "caregiver_required"
+		}
+		c.JSON(status, gin.H{"error": code})
+		return
+	}
+	c.JSON(http.StatusCreated, profile)
+}
+
+func (h *Handler) UnlinkElder(c *gin.Context) {
+	if auth.Role(c) != "CAREGIVER" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "caregiver_required"})
+		return
+	}
+	err := h.service.UnlinkElder(c.Request.Context(), auth.UserID(c), c.Param("elderID"))
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, ErrLinkNotFound) {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, gin.H{"error": "elder_unlink_failed"})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func (h *Handler) GetMe(c *gin.Context) {

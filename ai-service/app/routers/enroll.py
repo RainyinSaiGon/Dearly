@@ -1,58 +1,37 @@
-"""
-Router: Speaker Enrollment
+"""Extract an ECAPA embedding for one enrollment phrase."""
 
-Pipeline (W4):
-    Audio file (wav/m4a)
-        ↓
-    Resample to 16 kHz mono              ← TODO(W4): use torchaudio.transforms.Resample
-        ↓
-    ECAPA-TDNN feature extraction        ← TODO(W4): call EcapaTDNN.extract_embedding()
-        ↓
-    192-dim embedding vector
-        ↓
-    Return vector as JSON                ← TODO(W4): serialize as list[float]
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 
-The Go backend calls this per phrase (5 total) and stores the embeddings.
-After all 5 phrases, Go backend calls ComputeAverageEmbedding.
-"""
-
-from fastapi import APIRouter, UploadFile, File, Form
-from fastapi.responses import JSONResponse
-import tempfile, os
+from app.models.ecapa import EcapaTDNN, ModelUnavailableError
+from app.services.audio import (
+    AudioValidationError,
+    remove_temporary_audio,
+    save_uploaded_audio,
+)
 
 router = APIRouter()
+IMPLEMENTED = True
+
+
+def model_provider() -> EcapaTDNN:
+    return EcapaTDNN.shared()
 
 
 @router.post("/")
 async def enroll_speaker(
     audio: UploadFile = File(...),
-    phrase_index: int = Form(...),  # 0–4
+    phrase_index: int = Form(...),
 ):
-    """
-    Accept one audio phrase and return its ECAPA-TDNN embedding vector.
-
-    TODO(W4) — Step by step:
-    1. Save uploaded audio to a temp file:
-           with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
-               f.write(await audio.read())
-               tmp_path = f.name
-
-    2. Validate phrase_index is in range 0–4.
-
-    3. Load ECAPA-TDNN model (singleton, loaded once at startup):
-           from app.models.ecapa import EcapaTDNN
-           model = EcapaTDNN()  # loads from ECAPA_MODEL_PATH env var
-
-    4. Extract embedding:
-           embedding = model.extract_embedding(tmp_path)  → list[float] (192-dim)
-
-    5. Clean up temp file.
-
-    6. Return:
-           { "phrase_index": int, "embedding": list[float] }
-    """
-    # TODO(W4): implement the steps above
-    return JSONResponse(
-        status_code=501,
-        content={"status": "not_implemented", "detail": "Enrollment endpoint — see TODO(W4)"},
-    )
+    if phrase_index not in range(5):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "phrase_index must be between 0 and 4")
+    try:
+        path = await save_uploaded_audio(audio)
+    except AudioValidationError as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(error)) from error
+    try:
+        embedding = model_provider().extract_embedding(path)
+        return {"phrase_index": phrase_index, "embedding": embedding}
+    except ModelUnavailableError as error:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(error)) from error
+    finally:
+        remove_temporary_audio(path)

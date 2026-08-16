@@ -1,6 +1,8 @@
 package com.dearly.app.data.repository
 
 import com.dearly.app.data.remote.DearlyApi
+import com.dearly.app.data.remote.ElderLinkCodeDto
+import com.dearly.app.data.remote.ElderLinkRequest
 import com.dearly.app.data.remote.FcmTokenRequest
 import com.dearly.app.data.remote.RefreshRequest
 import com.dearly.app.data.remote.SessionRequest
@@ -34,6 +36,12 @@ class AuthRepository @Inject constructor(
 
     suspend fun elders(): List<UserDto> = api.elders()
 
+    suspend fun createElderLinkCode(): ElderLinkCodeDto = api.createElderLinkCode()
+
+    suspend fun linkElder(code: String): UserDto = api.linkElder(ElderLinkRequest(code))
+
+    suspend fun unlinkElder(elderId: String) = api.unlinkElder(elderId)
+
     suspend fun signOut() {
         tokenStore.refreshToken()?.let { token ->
             runCatching { api.logout(RefreshRequest(token)) }
@@ -44,4 +52,5 @@ class AuthRepository @Inject constructor(
 
     fun userId(): String? = tokenStore.userId()
     fun role(): String? = tokenStore.role()
+    fun hasSession(): Boolean = !tokenStore.accessToken().isNullOrBlank()
 }

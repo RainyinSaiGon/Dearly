@@ -25,6 +25,13 @@ data class UserDto(
     @SerializedName("avatar_url") val avatarUrl: String?
 )
 
+data class ElderLinkRequest(@SerializedName("link_code") val linkCode: String)
+
+data class ElderLinkCodeDto(
+    val code: String,
+    @SerializedName("expires_at") val expiresAt: String
+)
+
 data class ContactDto(
     val id: String,
     @SerializedName("elder_id") val elderId: String,
@@ -79,3 +86,28 @@ data class DoseRequest(
 )
 
 data class FcmTokenRequest(@SerializedName("fcm_token") val fcmToken: String)
+
+data class VoiceEnrollmentDto(
+    @SerializedName("phrase_index") val phraseIndex: Int,
+    @SerializedName("enrolled_count") val enrolledCount: Int,
+    @SerializedName("total_required") val totalRequired: Int
+)
+
+data class VoiceVerificationDto(
+    val passed: Boolean,
+    val score: Double,
+    @SerializedName("verification_grant") val verificationGrant: String?,
+    @SerializedName("expires_in") val expiresIn: Long?
+)
+
+data class VoiceQueryDto(
+    val transcript: String,
+    val intent: String,
+    val entities: Map<String, Any?>,
+    @SerializedName("response_text") val responseText: String,
+    @SerializedName("response_audio_base64") val responseAudioBase64: String?,
+    @SerializedName("response_audio_mime") val responseAudioMime: String?,
+    @SerializedName("sv_required") val svRequired: Boolean,
+    @SerializedName("sv_passed") val svPassed: Boolean?,
+    @SerializedName("identified_user_id") val identifiedUserId: String?
+)

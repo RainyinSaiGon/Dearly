@@ -56,7 +56,9 @@ private val RoleBodyText = Color(0xFF414844)
 @Composable
 fun RoleSelectionScreen(
     onRoleSelected: (UserRole) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    busy: Boolean = false,
+    error: String? = null
 ) {
     var selectedRole by remember { mutableStateOf<UserRole?>(null) }
 
@@ -110,9 +112,18 @@ fun RoleSelectionScreen(
             )
 
             Spacer(modifier = Modifier.height(32.dp))
+            error?.let {
+                Text(
+                    it,
+                    color = Color(0xFFC62828),
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(bottom = 10.dp)
+                )
+            }
             Button(
                 onClick = { selectedRole?.let(onRoleSelected) },
-                enabled = selectedRole != null,
+                enabled = selectedRole != null && !busy,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(64.dp),

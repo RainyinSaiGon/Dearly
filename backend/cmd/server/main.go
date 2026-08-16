@@ -86,7 +86,7 @@ func main() {
 	protected := v1.Group("", auth.JWTMiddleware(jwtService))
 	user.NewHandler(userService).RegisterRoutes(protected.Group("/users"))
 	contact.NewHandler(contactService, elderResolver).RegisterRoutes(protected.Group("/contacts"))
-	medication.NewHandler(medicationService, elderResolver).RegisterRoutes(protected.Group("/medications"))
+	medication.NewHandler(medicationService, elderResolver, voiceService).RegisterRoutes(protected.Group("/medications"))
 	notification.NewHandler(notificationService).RegisterRoutes(protected.Group("/notifications"))
 	voice.NewHandler(voiceService).RegisterRoutes(protected.Group("/voice"))
 

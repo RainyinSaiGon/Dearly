@@ -23,7 +23,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.Button
@@ -44,7 +43,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -57,13 +55,14 @@ private val SignUpBackground = Color(0xFFF8F9F5)
 @Composable
 fun SignUpScreen(
     onBack: () -> Unit,
-    onContinue: () -> Unit,
-    onSignIn: () -> Unit
+    onContinue: (String, String) -> Unit,
+    onGoogleSignIn: () -> Unit,
+    onSignIn: () -> Unit,
+    busy: Boolean = false,
+    error: String? = null
 ) {
     var fullName by remember { mutableStateOf("") }
     var phoneNumber by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var confirmPassword by remember { mutableStateOf("") }
     var acceptedTerms by remember { mutableStateOf(false) }
 
     Box(
@@ -121,8 +120,7 @@ fun SignUpScreen(
             ) {
                 SignUpField(fullName, { fullName = it }, "Họ và tên", "Nhập họ và tên", Icons.Default.Person)
                 SignUpField(phoneNumber, { phoneNumber = it }, "Số điện thoại", "Nhập số điện thoại", Icons.Default.Phone)
-                SignUpField(password, { password = it }, "Mật khẩu", "Nhập mật khẩu", Icons.Default.Lock, true)
-                SignUpField(confirmPassword, { confirmPassword = it }, "Xác nhận mật khẩu", "Xác nhận mật khẩu", Icons.Default.Lock, true)
+                error?.let { Text(it, color = Color(0xFFC62828), fontSize = 13.sp) }
 
                 Row(
                     modifier = Modifier
@@ -145,8 +143,8 @@ fun SignUpScreen(
                     )
                 }
                 Button(
-                    onClick = onContinue,
-                    enabled = acceptedTerms,
+                    onClick = { onContinue(fullName.trim(), phoneNumber.trim()) },
+                    enabled = !busy && acceptedTerms && fullName.isNotBlank() && phoneNumber.isNotBlank(),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 8.dp)
@@ -161,7 +159,8 @@ fun SignUpScreen(
                 }
                 SignUpDivider()
                 OutlinedButton(
-                    onClick = onContinue,
+                    onClick = onGoogleSignIn,
+                    enabled = !busy,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 8.dp)
@@ -227,8 +226,7 @@ private fun SignUpField(
     onValueChange: (String) -> Unit,
     label: String,
     placeholder: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    password: Boolean = false
+    icon: androidx.compose.ui.graphics.vector.ImageVector
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, color = Color(0xFF41474E), fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -238,7 +236,6 @@ private fun SignUpField(
             placeholder = { Text(placeholder, color = Color(0xFF6B7280), fontSize = 15.sp) },
             leadingIcon = { Icon(icon, null, tint = SignUpGreen, modifier = Modifier.size(21.dp)) },
             singleLine = true,
-            visualTransformation = if (password) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = RoundedCornerShape(8.dp)
         )

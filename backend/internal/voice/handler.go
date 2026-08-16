@@ -1,6 +1,7 @@
 package voice
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -64,16 +65,21 @@ func (h *Handler) Query(c *gin.Context) {
 }
 
 func (h *Handler) Verify(c *gin.Context) {
+	intent := c.PostForm("intent")
 	filename, audio, ok := readAudio(c)
 	if !ok {
 		return
 	}
-	passed, score, err := h.service.Verify(c.Request.Context(), auth.UserID(c), filename, audio)
+	result, err := h.service.Verify(c.Request.Context(), auth.UserID(c), intent, filename, audio)
 	if err != nil {
+		if errors.Is(err, ErrInvalidIntent) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_protected_intent"})
+			return
+		}
 		c.JSON(http.StatusBadGateway, gin.H{"error": "voice_verification_failed", "message": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"passed": passed, "score": score})
+	c.JSON(http.StatusOK, result)
 }
 
 func readAudio(c *gin.Context) (string, []byte, bool) {

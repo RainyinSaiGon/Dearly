@@ -42,13 +42,29 @@ The API verifies the token with Firebase Admin, upserts the user, and returns a 
 ## Public routes
 
 - `/api/v1/auth/session`, `/refresh`, `/logout`
-- `/api/v1/users/me`, `/users/me/elders`
+- `/api/v1/users/me`, `/users/me/elders`, `/users/me/link-code`
 - `/api/v1/contacts`
 - `/api/v1/medications`, `/:id/taken`, `/:id/snooze`
 - `/api/v1/notifications`
 - `/api/v1/voice/enroll`, `/verify`, `/query`
 
 Contacts and medications accept an optional `elder_id`. Elders may only use their own ID. Caregivers must have a row in `caregiver_elder_links`.
+
+Voice enrollment stores five phrase embeddings and an averaged profile. `POST /voice/query`
+uses that profile for SID and intent classification but never authorizes an action. For a
+protected intent, the elder sends a second recording to `POST /voice/verify` with `intent`.
+A successful verification returns a random, two-minute, one-use grant. Protected endpoints
+consume the grant from `X-Voice-Grant`; for example, `POST /medications/:id/taken` accepts only
+an elder's own `MARK_TAKEN` grant. The database stores only the grant's SHA-256 hash.
+
+An elder creates a ten-minute, one-use caregiver code with `POST /api/v1/users/me/link-code`.
+A caregiver redeems `{"link_code":"ABCD-2345"}` with `POST /api/v1/users/me/elders` and
+can remove the relationship with `DELETE /api/v1/users/me/elders/:elderID`. Only the
+SHA-256 hash of a code is stored.
+
+Medication dose logs are generated idempotently for the current and next local day by
+the notification worker. `APP_TIMEZONE` controls all medication day boundaries and
+defaults to `Asia/Ho_Chi_Minh`.
 
 ## Kafka contract
 
@@ -80,6 +96,12 @@ The emulator uses `http://10.0.2.2:8080/api/v1/`. Override it when building for 
 
 ```powershell
 .\gradlew.bat assembleDebug -PDEARLY_API_BASE_URL=http://192.168.1.10:8080/api/v1/
+```
+
+Cleartext traffic is enabled only for debug builds. Release builds require an HTTPS URL:
+
+```powershell
+.\gradlew.bat assembleRelease -PDEARLY_RELEASE_API_BASE_URL=https://api.example.com/api/v1/
 ```
 
 ## Trade-offs

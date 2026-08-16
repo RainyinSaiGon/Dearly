@@ -6,11 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/dearly/backend/pkg/appclock"
 	"github.com/dearly/backend/pkg/events"
 )
 
@@ -52,18 +52,13 @@ type Service struct {
 }
 
 func NewService(db *sql.DB, publisher events.Publisher) *Service {
-	locationName := os.Getenv("APP_TIMEZONE")
-	if locationName == "" {
-		locationName = "Asia/Ho_Chi_Minh"
-	}
-	location, err := time.LoadLocation(locationName)
-	if err != nil {
-		location = time.UTC
-	}
-	return &Service{db: db, events: publisher, location: location}
+	return &Service{db: db, events: publisher, location: appclock.LocationFromEnv()}
 }
 
 func (s *Service) List(ctx context.Context, elderID string) ([]Medication, error) {
+	if err := s.EnsureDoseLogs(ctx, elderID, 1); err != nil {
+		return nil, fmt.Errorf("ensure medication logs: %w", err)
+	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id::text, elder_id::text, name, COALESCE(dosage,''), frequency_per_day,
 		       time_slots, notes
@@ -153,9 +148,11 @@ func (s *Service) Update(ctx context.Context, medicationID, elderID string, inpu
 		return nil, err
 	}
 	medication.TimeSlots = input.TimeSlots
+	dayStart, _ := appclock.DayBounds(time.Now(), s.location)
 	if _, err := tx.ExecContext(ctx, `
 		DELETE FROM medication_logs
-		WHERE medication_id=$1 AND scheduled_time::date=CURRENT_DATE AND status='PENDING'`, medicationID); err != nil {
+		WHERE medication_id=$1 AND scheduled_time >= $2
+		  AND status IN ('PENDING','SNOOZED')`, medicationID, dayStart); err != nil {
 		return nil, err
 	}
 	if err := s.createTodayLogs(ctx, tx, medication); err != nil {
@@ -255,12 +252,41 @@ func (s *Service) createTodayLogs(ctx context.Context, tx *sql.Tx, medication Me
 	return nil
 }
 
+func (s *Service) EnsureDoseLogs(ctx context.Context, elderID string, daysAhead int) error {
+	if daysAhead < 1 {
+		return errors.New("daysAhead must be at least 1")
+	}
+	now := time.Now().In(s.location)
+	lastDay := now.AddDate(0, 0, daysAhead-1)
+	var elderFilter any
+	if elderID != "" {
+		elderFilter = elderID
+	}
+	_, err := s.db.ExecContext(ctx, `
+		WITH dates AS (
+			SELECT generate_series($2::date, $3::date, INTERVAL '1 day')::date AS local_date
+		)
+		INSERT INTO medication_logs(medication_id, scheduled_time, status)
+		SELECT m.id,
+		       (dates.local_date + slot.value::time) AT TIME ZONE $1,
+		       'PENDING'
+		FROM medications m
+		CROSS JOIN dates
+		CROSS JOIN LATERAL jsonb_array_elements_text(m.time_slots) AS slot(value)
+		WHERE ($4::uuid IS NULL OR m.elder_id=$4::uuid)
+		ON CONFLICT(medication_id, scheduled_time) DO NOTHING`,
+		s.location.String(), now.Format("2006-01-02"), lastDay.Format("2006-01-02"), elderFilter,
+	)
+	return err
+}
+
 func (s *Service) todayLogs(ctx context.Context, medication Medication) ([]DoseLog, error) {
+	dayStart, dayEnd := appclock.DayBounds(time.Now(), s.location)
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id::text, scheduled_time, status, taken_at
 		FROM medication_logs
-		WHERE medication_id=$1 AND scheduled_time::date=CURRENT_DATE
-		ORDER BY scheduled_time`, medication.ID)
+		WHERE medication_id=$1 AND scheduled_time >= $2 AND scheduled_time < $3
+		ORDER BY scheduled_time`, medication.ID, dayStart, dayEnd)
 	if err != nil {
 		return nil, err
 	}

@@ -10,6 +10,7 @@ import com.dearly.app.data.remote.DoseRequest
 import com.dearly.app.data.remote.MedicationRequest
 import com.dearly.app.domain.model.DoseStatus
 import com.dearly.app.domain.model.MedicationLog
+import com.dearly.app.domain.model.Medication
 import com.dearly.app.domain.model.NewMedication
 import com.google.gson.Gson
 import kotlinx.coroutines.flow.Flow
@@ -24,6 +25,23 @@ class MedicationRepository @Inject constructor(
     private val dao: MedicationDao,
     private val gson: Gson
 ) {
+    fun observeMedications(elderId: String): Flow<List<Medication>> =
+        dao.observeMedications(elderId).map { items ->
+            items.map {
+                Medication(
+                    id = it.id,
+                    elderId = it.elderId,
+                    name = it.name,
+                    dosage = it.dosage,
+                    frequencyPerDay = it.frequencyPerDay,
+                    timeSlots = runCatching {
+                        gson.fromJson(it.timeSlotsJson, Array<String>::class.java).toList()
+                    }.getOrDefault(emptyList()),
+                    notes = it.notes
+                )
+            }
+        }
+
     fun observeTodayLogs(elderId: String): Flow<List<MedicationLog>> =
         dao.observeTodayLogs(elderId).map { items ->
             items.map {
@@ -69,8 +87,24 @@ class MedicationRepository @Inject constructor(
         refresh(elderId)
     }
 
-    suspend fun markTaken(elderId: String?, log: MedicationLog) {
-        api.markTaken(log.medicationId, DoseRequest(elderId, log.scheduledTime))
+    suspend fun update(elderId: String?, medicationId: String, item: NewMedication) {
+        api.updateMedication(
+            medicationId,
+            MedicationRequest(
+                elderId, item.name, item.dosage, item.timeSlots.size,
+                item.timeSlots, item.notes
+            )
+        )
+        refresh(elderId)
+    }
+
+    suspend fun delete(elderId: String?, medicationId: String) {
+        api.deleteMedication(medicationId, elderId)
+        refresh(elderId)
+    }
+
+    suspend fun markTaken(elderId: String?, log: MedicationLog, verificationGrant: String) {
+        api.markTaken(log.medicationId, verificationGrant, DoseRequest(elderId, log.scheduledTime))
         refresh(elderId)
     }
 }

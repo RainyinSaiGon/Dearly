@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.PersonOutline
@@ -40,19 +41,33 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dearly.app.ui.elder.ElderFooter
 import com.dearly.app.ui.elder.ElderTab
+import com.dearly.app.ui.components.VoiceCaptureButton
+import java.io.File
 
 private val SettingsForest = Color(0xFF174D3B)
 private enum class SettingsOption { ACCOUNT, NOTIFICATIONS, LANGUAGE, SUPPORT }
 
 @Composable
 fun CaregiverSettingsScreen(
+    displayName: String = "Dearly user",
+    phoneNumber: String = "",
     onOpenActivity: () -> Unit = {},
     onOpenCalls: () -> Unit = {},
     onOpenMedications: () -> Unit = {},
     onLogout: () -> Unit = {},
     elderMode: Boolean = false,
     onRoleChanged: (String) -> Unit = {},
-    initialAccountRole: String = "Người chăm sóc"
+    initialAccountRole: String = "Người chăm sóc",
+    linkCode: String? = null,
+    linkCodeExpiresAt: String? = null,
+    linkBusy: Boolean = false,
+    linkError: String? = null,
+    linkMessage: String? = null,
+    voiceEnrollmentCount: Int = 0,
+    voiceMessage: String? = null,
+    onGenerateLinkCode: () -> Unit = {},
+    onLinkElder: (String) -> Unit = {},
+    onEnrollVoice: (File) -> Unit = {}
 ) {
     var editProfile by remember { mutableStateOf(false) }
     var savedRole by remember { mutableStateOf("Bác") }
@@ -75,9 +90,22 @@ fun CaregiverSettingsScreen(
             SettingsContent(
                 modifier = Modifier.weight(1f),
                 onEdit = { editProfile = true },
+                displayName = displayName,
+                phoneNumber = phoneNumber,
                 onLogout = onLogout,
                 onRoleChanged = onRoleChanged,
-                initialAccountRole = initialAccountRole
+                initialAccountRole = initialAccountRole,
+                elderMode = elderMode,
+                linkCode = linkCode,
+                linkCodeExpiresAt = linkCodeExpiresAt,
+                linkBusy = linkBusy,
+                linkError = linkError,
+                linkMessage = linkMessage,
+                voiceEnrollmentCount = voiceEnrollmentCount,
+                voiceMessage = voiceMessage,
+                onGenerateLinkCode = onGenerateLinkCode,
+                onLinkElder = onLinkElder,
+                onEnrollVoice = onEnrollVoice
             )
         }
         if (!editProfile) {
@@ -98,18 +126,41 @@ fun CaregiverSettingsScreen(
 }
 
 @Composable
-private fun SettingsContent(modifier: Modifier, onEdit: () -> Unit, onLogout: () -> Unit, onRoleChanged: (String) -> Unit, initialAccountRole: String) {
+private fun SettingsContent(
+    modifier: Modifier,
+    onEdit: () -> Unit,
+    displayName: String,
+    phoneNumber: String,
+    onLogout: () -> Unit,
+    onRoleChanged: (String) -> Unit,
+    initialAccountRole: String,
+    elderMode: Boolean,
+    linkCode: String?,
+    linkCodeExpiresAt: String?,
+    linkBusy: Boolean,
+    linkError: String?,
+    linkMessage: String?,
+    voiceEnrollmentCount: Int,
+    voiceMessage: String?,
+    onGenerateLinkCode: () -> Unit,
+    onLinkElder: (String) -> Unit,
+    onEnrollVoice: (File) -> Unit
+) {
     var activeOption by remember { mutableStateOf<SettingsOption?>(null) }
     var language by remember { mutableStateOf("Tiếng Việt") }
     var role by remember { mutableStateOf(initialAccountRole) }
     var showLogoutConfirmation by remember { mutableStateOf(false) }
+    var showFamilyLink by remember { mutableStateOf(false) }
+    var showVoiceEnrollment by remember { mutableStateOf(false) }
     Column(modifier.padding(horizontal = 12.dp, vertical = 22.dp)) {
         Surface(color = Color.White, shape = RoundedCornerShape(12.dp), shadowElevation = 1.dp) {
             Column(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Avatar(editable = false)
                 Spacer(Modifier.height(10.dp))
-                Text("Nguyễn Văn An", color = SettingsForest, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                Text("090 123 4567", color = Color(0xFF788387), fontSize = 15.sp)
+                Text(displayName, color = SettingsForest, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                if (phoneNumber.isNotBlank()) {
+                    Text(phoneNumber, color = Color(0xFF788387), fontSize = 15.sp)
+                }
                 Button(onClick = onEdit, modifier = Modifier.padding(top = 12.dp).height(40.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFA7F1CD), contentColor = SettingsForest)) { Text("Chỉnh sửa", fontSize = 15.sp) }
             }
         }
@@ -117,6 +168,17 @@ private fun SettingsContent(modifier: Modifier, onEdit: () -> Unit, onLogout: ()
         Surface(color = Color.White, shape = RoundedCornerShape(12.dp)) {
             Column(Modifier.padding(vertical = 6.dp)) {
                 SettingRow(Icons.Outlined.PersonOutline, "Cài đặt tài khoản") { activeOption = SettingsOption.ACCOUNT }
+                SettingRow(
+                    Icons.Outlined.Link,
+                    if (elderMode) "Kết nối người chăm sóc" else "Kết nối người thân"
+                ) { showFamilyLink = true }
+                if (elderMode) {
+                    SettingRow(
+                        Icons.Outlined.Lock,
+                        "Bảo mật giọng nói",
+                        "$voiceEnrollmentCount/5 câu đã lưu"
+                    ) { showVoiceEnrollment = true }
+                }
                 SettingRow(Icons.Outlined.Notifications, "Thông báo") { activeOption = SettingsOption.NOTIFICATIONS }
                 SettingRow(Icons.Outlined.Language, "Ngôn ngữ", language) { activeOption = SettingsOption.LANGUAGE }
                 SettingRow(Icons.Outlined.Support, "Hỗ trợ") { activeOption = SettingsOption.SUPPORT }
@@ -150,6 +212,224 @@ private fun SettingsContent(modifier: Modifier, onEdit: () -> Unit, onLogout: ()
             onConfirm = onLogout
         )
     }
+    if (showFamilyLink) {
+        FamilyLinkDialog(
+            elderMode = elderMode,
+            code = linkCode,
+            expiresAt = linkCodeExpiresAt,
+            busy = linkBusy,
+            error = linkError,
+            message = linkMessage,
+            onGenerateCode = onGenerateLinkCode,
+            onLinkElder = onLinkElder,
+            onDismiss = { showFamilyLink = false }
+        )
+    }
+    if (showVoiceEnrollment) {
+        VoiceEnrollmentDialog(
+            enrolledCount = voiceEnrollmentCount,
+            busy = linkBusy,
+            message = voiceMessage,
+            error = linkError,
+            onAudioReady = onEnrollVoice,
+            onDismiss = { showVoiceEnrollment = false }
+        )
+    }
+}
+
+private val enrollmentPhrases = listOf(
+    "Dearly ơi, hôm nay tôi cần uống thuốc gì?",
+    "Dearly ơi, hãy gọi cho người thân của tôi.",
+    "Dearly ơi, tôi đã uống thuốc đúng giờ.",
+    "Dearly ơi, hãy nhắc tôi lịch hẹn hôm nay.",
+    "Dearly ơi, đây là giọng nói của tôi."
+)
+
+@Composable
+private fun VoiceEnrollmentDialog(
+    enrolledCount: Int,
+    busy: Boolean,
+    message: String?,
+    error: String?,
+    onAudioReady: (File) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val count = enrolledCount.coerceIn(0, enrollmentPhrases.size)
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        containerColor = Color.White,
+        title = {
+            Text(
+                "Đăng ký giọng nói",
+                color = SettingsForest,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    if (count == enrollmentPhrases.size) {
+                        "Đã lưu đủ ${enrollmentPhrases.size} câu xác minh."
+                    } else {
+                        "Đọc rõ câu ${count + 1}/${enrollmentPhrases.size}:"
+                    },
+                    color = Color(0xFF5F6B68),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+                if (count < enrollmentPhrases.size) {
+                    Text(
+                        enrollmentPhrases[count],
+                        color = SettingsForest,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 16.sp,
+                        modifier = Modifier.padding(top = 14.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    VoiceCaptureButton(
+                        onAudioReady = onAudioReady,
+                        enabled = !busy,
+                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                        idleLabel = "Ghi câu này"
+                    )
+                }
+                message?.let {
+                    Text(it, color = SettingsForest, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp))
+                }
+                error?.let {
+                    Text(it, color = Color(0xFFC62828), fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss, enabled = !busy) {
+                Text("Xong", color = SettingsForest, fontWeight = FontWeight.Bold)
+            }
+        }
+    )
+}
+
+@Composable
+private fun FamilyLinkDialog(
+    elderMode: Boolean,
+    code: String?,
+    expiresAt: String?,
+    busy: Boolean,
+    error: String?,
+    message: String?,
+    onGenerateCode: () -> Unit,
+    onLinkElder: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var enteredCode by remember { mutableStateOf("") }
+    val normalizedLength = enteredCode.count { it.isLetterOrDigit() }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color.White,
+        title = {
+            Text(
+                if (elderMode) "Kết nối người chăm sóc" else "Kết nối người thân",
+                color = SettingsForest,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (elderMode) {
+                    Text(
+                        "Tạo mã và gửi trực tiếp cho người chăm sóc của bạn.",
+                        color = Color(0xFF5F6B68),
+                        fontSize = 14.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    code?.let {
+                        Text(
+                            it,
+                            color = SettingsForest,
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 18.dp)
+                        )
+                    }
+                    if (expiresAt != null) {
+                        Text(
+                            "Mã có hiệu lực trong 10 phút và chỉ dùng một lần.",
+                            color = Color(0xFF67736F),
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(top = 8.dp),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                } else {
+                    Text(
+                        "Nhập mã do người thân cung cấp.",
+                        color = Color(0xFF5F6B68),
+                        fontSize = 14.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    OutlinedTextField(
+                        value = enteredCode,
+                        onValueChange = { value ->
+                            enteredCode = value.uppercase()
+                                .filter { it.isLetterOrDigit() || it == '-' }
+                                .take(9)
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                        label = { Text("Mã liên kết") },
+                        singleLine = true,
+                        isError = error != null
+                    )
+                }
+                error?.let {
+                    Text(
+                        it,
+                        color = Color(0xFFC83A32),
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 8.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+                message?.let {
+                    Text(
+                        it,
+                        color = SettingsForest,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 8.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                androidx.compose.material3.TextButton(onClick = onDismiss) {
+                    Text("Đóng", color = SettingsForest, fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(Modifier.size(10.dp))
+                Button(
+                    onClick = {
+                        if (elderMode) onGenerateCode() else onLinkElder(enteredCode)
+                    },
+                    enabled = !busy && (elderMode || normalizedLength == 8),
+                    colors = ButtonDefaults.buttonColors(containerColor = SettingsForest)
+                ) {
+                    Text(
+                        if (elderMode && code != null) "Tạo mã mới"
+                        else if (elderMode) "Tạo mã"
+                        else "Kết nối",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    )
 }
 
 @Composable
@@ -187,9 +467,20 @@ private fun SettingsOptionDialog(
         text = {
             when (option) {
                 SettingsOption.ACCOUNT -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Chọn vai trò phù hợp với bạn.", color = Color(0xFF5F6B68), fontSize = 14.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    RoleChoice("Người chăm sóc", "Theo dõi và hỗ trợ người thân", pendingRole) { pendingRole = it }
-                    RoleChoice("Người được chăm sóc", "Nhận hỗ trợ từ người thân", pendingRole) { pendingRole = it }
+                    Text(
+                        "Vai trò tài khoản: $pendingRole",
+                        color = SettingsForest,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Text(
+                        "Vai trò được bảo vệ bởi tài khoản và không thể đổi trong cài đặt.",
+                        color = Color(0xFF5F6B68),
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(top = 8.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
                 }
                 SettingsOption.NOTIFICATIONS -> Column(verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     NotificationToggle("Nhắc lịch uống thuốc", medicationAlerts) { medicationAlerts = it }

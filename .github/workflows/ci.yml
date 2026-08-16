@@ -63,6 +63,7 @@ jobs:
         run: |
           cd android
           ./gradlew lintDebug testDebugUnitTest
+          find app/build/test-results/testDebugUnitTest -name 'TEST-*.xml' -print -quit | grep -q .
 
       - name: Build Debug APK
         run: |
@@ -97,7 +98,7 @@ jobs:
         run: |
           cd backend
           go vet ./...
-          go test -v ./...
+          go test -race -v ./...
 
       - name: Build Go API Binary
         run: |
@@ -121,24 +122,25 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: ai-service/requirements.txt
+          cache-dependency-path: |
+            ai-service/requirements.txt
+            ai-service/requirements-dev.txt
 
-      - name: Install Dependencies, Setuptools, Ruff & Pytest
+      - name: Install Dependencies
         run: |
           cd ai-service
           python -m pip install --upgrade pip
-          pip install setuptools ruff pytest
-          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
       - name: Run Ruff Lint
         run: |
           cd ai-service
           ruff check .
 
-      - name: Run Pytest & Import Collection Validation
+      - name: Run Pytest
         run: |
           cd ai-service
-          pytest -v || python -c "import app.main, app.routers.enroll, app.routers.verify, app.routers.identify, app.routers.query"
+          pytest -v
 
   # ─── 4. Docker Compose & Dockerfile Build Verification ──────────────
   docker-ci:

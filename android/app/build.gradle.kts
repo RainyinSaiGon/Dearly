@@ -1,14 +1,27 @@
+import java.net.URI
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
     id("com.google.dagger.hilt.android")
-    // Firebase backend is temporarily disabled for local UI development.
-    // id("com.google.gms.google-services")
+    id("com.google.gms.google-services")
 }
 
-val dearlyApiBaseUrl = providers.gradleProperty("DEARLY_API_BASE_URL")
+val debugApiBaseUrl = providers.gradleProperty("DEARLY_API_BASE_URL")
     .orElse("http://10.0.2.2:8080/api/v1/")
+val releaseApiBaseUrl = providers.gradleProperty("DEARLY_RELEASE_API_BASE_URL")
+    .orElse("https://api.dearly.invalid/api/v1/")
+
+fun validatedApiBaseUrl(value: String, requireHttps: Boolean): String {
+    val scheme = runCatching { URI(value).scheme?.lowercase() }.getOrNull()
+    require(scheme == "http" || scheme == "https") { "API base URL must use HTTP or HTTPS" }
+    require(value.endsWith('/')) { "API base URL must end with /" }
+    if (requireHttps) {
+        require(scheme == "https") { "Release API base URL must use HTTPS" }
+    }
+    return value
+}
 
 android {
     namespace = "com.dearly.app"
@@ -20,7 +33,6 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
-        buildConfigField("String", "API_BASE_URL", "\"${dearlyApiBaseUrl.get()}\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -29,7 +41,13 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            val apiUrl = validatedApiBaseUrl(debugApiBaseUrl.get(), requireHttps = false)
+            buildConfigField("String", "API_BASE_URL", "\"$apiUrl\"")
+        }
         release {
+            val apiUrl = validatedApiBaseUrl(releaseApiBaseUrl.get(), requireHttps = true)
+            buildConfigField("String", "API_BASE_URL", "\"$apiUrl\"")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -103,6 +121,7 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:34.16.0"))
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-messaging")
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
     // implementation("androidx.credentials:credentials:1.3.0")
     // implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
     // implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")

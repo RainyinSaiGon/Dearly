@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dearly/backend/internal/medication"
 	"github.com/dearly/backend/internal/notification"
 	"github.com/dearly/backend/pkg/database"
 	"github.com/dearly/backend/pkg/events"
@@ -31,6 +32,7 @@ func main() {
 		log.Fatal(err)
 	}
 	service := notification.NewService(db, firebaseClients.Messaging)
+	medicationService := medication.NewService(db, events.NoopPublisher{})
 
 	brokers := strings.Split(env("KAFKA_BROKERS", "kafka:9092"), ",")
 	reader := kafka.NewReader(kafka.ReaderConfig{
@@ -39,7 +41,7 @@ func main() {
 	})
 	defer reader.Close()
 
-	go reminderLoop(ctx, service)
+	go reminderLoop(ctx, service, medicationService)
 	log.Printf("notification worker consuming %s", events.DomainTopic)
 	for {
 		message, err := reader.FetchMessage(ctx)
@@ -66,10 +68,13 @@ func main() {
 	}
 }
 
-func reminderLoop(ctx context.Context, service *notification.Service) {
+func reminderLoop(ctx context.Context, service *notification.Service, medicationService *medication.Service) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 	for {
+		if err := medicationService.EnsureDoseLogs(ctx, "", 2); err != nil && ctx.Err() == nil {
+			log.Printf("prepare medication logs: %v", err)
+		}
 		if err := service.DispatchDueReminders(ctx); err != nil && ctx.Err() == nil {
 			log.Printf("dispatch reminders: %v", err)
 		}

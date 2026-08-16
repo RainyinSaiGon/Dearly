@@ -1,111 +1,187 @@
-"""
-Evaluation script — compute EER and minDCF on the test set.
+"""Evaluate ECAPA speaker verification with EER and minDCF."""
 
-Usage:
-    python train/eval.py
-
-Run AFTER training. Reads the best checkpoint from models/ecapa_dearly.ckpt.
-Outputs numbers you copy directly into the academic report (Requirement 1).
-"""
-
-import os
+import argparse
+import bisect
+import json
 import random
-import torch
-import torchaudio
-import numpy as np
-from pathlib import Path
 from itertools import combinations
+from pathlib import Path
 
-# TODO(W4): Uncomment once speechbrain is installed
-# from speechbrain.utils.metric_stats import EER, minDCF
-# from app.models.ecapa import EcapaTDNN
+from app.models.ecapa import EcapaTDNN
 
-
-# ──────────────────────────────────────────────────────────────────
-# TODO(W4) Step 1: Generate trial pairs from test set
-# ──────────────────────────────────────────────────────────────────
-# A trial pair = (utt_path_1, utt_path_2, label)
-#   label = 1  → same speaker  (genuine)
-#   label = 0  → different speakers (impostor)
-#
-# Recommended: 10,000 pairs (5,000 genuine + 5,000 impostor)
-# MUST be speaker-disjoint from training set.
-#
-# def generate_trial_pairs(test_dir: str, n_pairs: int = 10000):
-#     speakers = {spk.name: list(spk.glob("*.wav"))
-#                 for spk in Path(test_dir).iterdir() if spk.is_dir()}
-#
-#     genuine, impostor = [], []
-#
-#     # Genuine pairs: two utterances from the SAME speaker
-#     for spk, utts in speakers.items():
-#         if len(utts) >= 2:
-#             for u1, u2 in combinations(utts, 2):
-#                 genuine.append((str(u1), str(u2), 1))
-#
-#     # Impostor pairs: one utterance each from DIFFERENT speakers
-#     spk_list = list(speakers.keys())
-#     for _ in range(n_pairs * 2):   # generate extra, then sample
-#         s1, s2 = random.sample(spk_list, 2)
-#         u1 = random.choice(speakers[s1])
-#         u2 = random.choice(speakers[s2])
-#         impostor.append((str(u1), str(u2), 0))
-#
-#     random.shuffle(genuine)
-#     random.shuffle(impostor)
-#     half = n_pairs // 2
-#     return genuine[:half] + impostor[:half]
+AUDIO_SUFFIXES = {".flac", ".m4a", ".mp3", ".ogg", ".wav"}
 
 
-# ──────────────────────────────────────────────────────────────────
-# TODO(W4) Step 2: Score all trial pairs
-# ──────────────────────────────────────────────────────────────────
-# def score_pairs(pairs, model: EcapaTDNN):
-#     positive_scores, negative_scores = [], []
-#     for path1, path2, label in pairs:
-#         emb1 = model.extract_embedding(path1)
-#         emb2 = model.extract_embedding(path2)
-#         score = model.cosine_similarity(emb1, emb2)
-#         if label == 1:
-#             positive_scores.append(score)
-#         else:
-#             negative_scores.append(score)
-#     return positive_scores, negative_scores
+def collect_speakers(test_directory: Path) -> dict[str, list[Path]]:
+    speakers = {
+        directory.name: sorted(
+            path for path in directory.rglob("*") if path.suffix.lower() in AUDIO_SUFFIXES
+        )
+        for directory in test_directory.iterdir()
+        if directory.is_dir()
+    }
+    return {speaker: recordings for speaker, recordings in speakers.items() if recordings}
 
 
-# ──────────────────────────────────────────────────────────────────
-# TODO(W4) Step 3: Compute EER and minDCF
-# ──────────────────────────────────────────────────────────────────
-# positive_scores = torch.tensor(positive_scores)
-# negative_scores = torch.tensor(negative_scores)
-#
-# eer, threshold = EER(positive_scores, negative_scores)
-# min_dcf, _     = minDCF(positive_scores, negative_scores)
-#
-# print("=" * 40)
-# print(f"  EER:       {eer * 100:.2f}%")
-# print(f"  minDCF:    {min_dcf:.4f}")
-# print(f"  Threshold: {threshold:.4f}  (our deployment threshold: 0.80)")
-# print("=" * 40)
-# # Copy these numbers into the academic report table.
+def generate_trials(
+    speakers: dict[str, list[Path]],
+    trial_count: int,
+    seed: int,
+) -> list[tuple[Path, Path, int]]:
+    genuine = [
+        (first, second, 1)
+        for recordings in speakers.values()
+        for first, second in combinations(recordings, 2)
+    ]
+    if not genuine:
+        raise ValueError("test data needs at least one speaker with two recordings")
+    speaker_ids = sorted(speakers)
+    if len(speaker_ids) < 2:
+        raise ValueError("test data needs at least two speakers")
+    generator = random.Random(seed)
+    generator.shuffle(genuine)
+    blocks = []
+    cumulative_sizes = []
+    possible_impostors = 0
+    for first_speaker, second_speaker in combinations(speaker_ids, 2):
+        first_recordings = speakers[first_speaker]
+        second_recordings = speakers[second_speaker]
+        possible_impostors += len(first_recordings) * len(second_recordings)
+        blocks.append((first_recordings, second_recordings))
+        cumulative_sizes.append(possible_impostors)
+    target_each = min(trial_count // 2, len(genuine), possible_impostors)
+    if target_each == 0:
+        raise ValueError("trial_count must allow genuine and impostor trials")
+    impostor = []
+    for rank in generator.sample(range(possible_impostors), target_each):
+        block_index = bisect.bisect_right(cumulative_sizes, rank)
+        block_start = cumulative_sizes[block_index - 1] if block_index else 0
+        first_recordings, second_recordings = blocks[block_index]
+        local_rank = rank - block_start
+        first = first_recordings[local_rank // len(second_recordings)]
+        second = second_recordings[local_rank % len(second_recordings)]
+        impostor.append((first, second, 0))
+    trials = genuine[:target_each] + impostor
+    generator.shuffle(trials)
+    return trials
 
 
-# ──────────────────────────────────────────────────────────────────
-# TODO(W4) Step 4: Baseline comparison
-# ──────────────────────────────────────────────────────────────────
-# Run eval TWICE:
-#   1. With the raw VoxCeleb2 pretrained model (no fine-tuning)
-#   2. With your fine-tuned ecapa_dearly.ckpt
-#
-# Report both rows in the table:
-#
-# | System                      | EER (%) | minDCF |
-# |-----------------------------|---------|--------|
-# | ECAPA-TDNN (VoxCeleb2 only) |  X.XX   | X.XXXX |
-# | + Fine-tuned (VoxVietnam)   |  X.XX   | X.XXXX |
-#
-# The improvement proves fine-tuning on Vietnamese data helps.
+def score_trials(
+    model: EcapaTDNN,
+    trials: list[tuple[Path, Path, int]],
+    cache: dict[Path, list[float]] | None = None,
+) -> tuple[list[float], list[float]]:
+    embeddings = cache if cache is not None else {}
+
+    def embedding(path: Path) -> list[float]:
+        if path not in embeddings:
+            embeddings[path] = model.extract_embedding(path)
+        return embeddings[path]
+
+    positive, negative = [], []
+    for first, second, label in trials:
+        score = model.cosine_similarity(embedding(first), embedding(second))
+        (positive if label == 1 else negative).append(score)
+    return positive, negative
+
+
+def compute_top1_accuracy(
+    model: EcapaTDNN,
+    speakers: dict[str, list[Path]],
+    cache: dict[Path, list[float]] | None = None,
+    enrollment_count: int = 5,
+) -> dict[str, float | int]:
+    embeddings = cache if cache is not None else {}
+
+    def embedding(path: Path) -> list[float]:
+        if path not in embeddings:
+            embeddings[path] = model.extract_embedding(path)
+        return embeddings[path]
+
+    profiles: dict[str, list[float]] = {}
+    queries: list[tuple[str, Path]] = []
+    for speaker, recordings in speakers.items():
+        if len(recordings) < 2:
+            continue
+        used_for_enrollment = min(enrollment_count, len(recordings) - 1)
+        enrolled = [embedding(path) for path in recordings[:used_for_enrollment]]
+        dimension = len(enrolled[0])
+        if any(len(vector) != dimension for vector in enrolled):
+            raise ValueError("embedding dimensions do not match")
+        profiles[speaker] = [
+            sum(vector[index] for vector in enrolled) / len(enrolled)
+            for index in range(dimension)
+        ]
+        queries.extend((speaker, path) for path in recordings[used_for_enrollment:])
+    if len(profiles) < 2 or not queries:
+        raise ValueError("SID evaluation needs two speakers with enrollment and query audio")
+    correct = 0
+    for expected_speaker, query_path in queries:
+        query = embedding(query_path)
+        predicted = max(
+            profiles,
+            key=lambda speaker: model.cosine_similarity(query, profiles[speaker]),
+        )
+        correct += predicted == expected_speaker
+    return {
+        "sid_top1_accuracy": correct / len(queries),
+        "sid_queries": len(queries),
+        "sid_speakers": len(profiles),
+    }
+
+
+def compute_metrics(
+    positive: list[float],
+    negative: list[float],
+    target_probability: float = 0.01,
+) -> dict[str, float]:
+    if not positive or not negative:
+        raise ValueError("both genuine and impostor scores are required")
+    thresholds = sorted(set(positive + negative))
+    operating_points = []
+    for threshold in thresholds:
+        false_reject = sum(score < threshold for score in positive) / len(positive)
+        false_accept = sum(score >= threshold for score in negative) / len(negative)
+        cost = false_reject * target_probability + false_accept * (1 - target_probability)
+        operating_points.append((threshold, false_reject, false_accept, cost))
+    threshold, false_reject, false_accept, _ = min(
+        operating_points,
+        key=lambda item: abs(item[1] - item[2]),
+    )
+    min_dcf = min(point[3] for point in operating_points)
+    return {
+        "eer": (false_reject + false_accept) / 2,
+        "eer_percent": (false_reject + false_accept) * 50,
+        "eer_threshold": threshold,
+        "min_dcf": min_dcf,
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("test_directory", type=Path)
+    parser.add_argument("--trials", type=int, default=10_000)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--output", type=Path)
+    args = parser.parse_args()
+    speakers = collect_speakers(args.test_directory)
+    trials = generate_trials(speakers, args.trials, args.seed)
+    model = EcapaTDNN.shared()
+    embedding_cache: dict[Path, list[float]] = {}
+    positive, negative = score_trials(model, trials, embedding_cache)
+    result = {
+        **compute_metrics(positive, negative),
+        **compute_top1_accuracy(model, speakers, embedding_cache),
+        "genuine_trials": len(positive),
+        "impostor_trials": len(negative),
+        "speakers": len(speakers),
+    }
+    serialized = json.dumps(result, indent=2)
+    print(serialized)
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(serialized + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
-    print("Evaluation script skeleton — implement TODO steps above.")
+    main()

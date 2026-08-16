@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   build-release:
     name: Build & Package Installable Android Release
@@ -27,27 +30,46 @@ jobs:
         run: chmod +x android/gradlew
 
       - name: Build Debug & Release APKs
+        env:
+          DEARLY_RELEASE_API_BASE_URL: ${{ vars.DEARLY_RELEASE_API_BASE_URL }}
         run: |
           cd android
-          ./gradlew assembleDebug assembleRelease
+          test -n "$DEARLY_RELEASE_API_BASE_URL" || { echo "Set the DEARLY_RELEASE_API_BASE_URL repository variable"; exit 1; }
+          ./gradlew assembleDebug assembleRelease -PDEARLY_RELEASE_API_BASE_URL="$DEARLY_RELEASE_API_BASE_URL"
 
       - name: Sign Release APK with Debug Keystore (Installable)
         run: |
-          # Use Android SDK's apksigner / zipalign with standard debug keystore for easy installation by testers/graders
+          set -euo pipefail
+
           DEBUG_KEYSTORE="$HOME/.android/debug.keystore"
           if [ ! -f "$DEBUG_KEYSTORE" ]; then
             keytool -genkey -v -keystore "$DEBUG_KEYSTORE" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
-          
-          # Copy APKs for release upload
-          cp android/app/build/outputs/apk/debug/app-debug.apk dearly-v${GITHUB_REF_NAME}-debug.apk
-          cp android/app/build/outputs/apk/release/app-release-unsigned.apk dearly-v${GITHUB_REF_NAME}-unsigned.apk
+
+          BUILD_TOOLS_DIR="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          test -n "$BUILD_TOOLS_DIR"
+
+          UNSIGNED_APK="android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          ALIGNED_APK="dearly-${GITHUB_REF_NAME}-release-aligned.apk"
+          SIGNED_APK="dearly-${GITHUB_REF_NAME}-release.apk"
+
+          "$BUILD_TOOLS_DIR/zipalign" -f -p 4 "$UNSIGNED_APK" "$ALIGNED_APK"
+          "$BUILD_TOOLS_DIR/apksigner" sign \
+            --ks "$DEBUG_KEYSTORE" \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --out "$SIGNED_APK" \
+            "$ALIGNED_APK"
+          "$BUILD_TOOLS_DIR/apksigner" verify --verbose --print-certs "$SIGNED_APK"
+
+          cp android/app/build/outputs/apk/debug/app-debug.apk "dearly-${GITHUB_REF_NAME}-debug.apk"
 
       - name: Create GitHub Release & Upload APK Artifacts
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            dearly-v${GITHUB_REF_NAME}-debug.apk
-            dearly-v${GITHUB_REF_NAME}-unsigned.apk
+            dearly-${{ github.ref_name }}-debug.apk
+            dearly-${{ github.ref_name }}-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

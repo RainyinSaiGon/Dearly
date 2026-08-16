@@ -2,8 +2,28 @@ package user
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"errors"
 	"fmt"
+	"strings"
+	"time"
+
+	"github.com/dearly/backend/pkg/appclock"
+)
+
+var (
+	ErrInvalidLinkCode = errors.New("link code is invalid or expired")
+	ErrLinkNotFound    = errors.New("caregiver link not found")
+	ErrRoleNotAllowed  = errors.New("account role cannot perform this link operation")
+)
+
+const (
+	linkCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	linkCodeLength   = 8
+	linkCodeLifetime = 10 * time.Minute
 )
 
 type Profile struct {
@@ -30,18 +50,27 @@ type Updates struct {
 }
 
 type Service struct {
-	db *sql.DB
+	db       *sql.DB
+	location *time.Location
 }
 
-func NewService(db *sql.DB) *Service { return &Service{db: db} }
+type CaregiverLinkCode struct {
+	Code      string    `json:"code"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+func NewService(db *sql.DB) *Service {
+	return &Service{db: db, location: appclock.LocationFromEnv()}
+}
 
 func (s *Service) GetByID(ctx context.Context, userID string) (*Profile, error) {
+	dayStart, dayEnd := appclock.DayBounds(time.Now(), s.location)
 	var profile Profile
 	err := s.db.QueryRowContext(ctx, `
 		SELECT u.id::text, u.phone_number, u.email, u.name, u.age, u.city, u.role,
 		       u.avatar_url, ep.health_status_override,
 		       COUNT(ml.id) FILTER (
-		         WHERE ml.scheduled_time::date=CURRENT_DATE
+		         WHERE ml.scheduled_time >= $2 AND ml.scheduled_time < $3
 		           AND ml.status='PENDING' AND ml.scheduled_time < NOW()
 		       )::int
 		FROM users u
@@ -50,7 +79,7 @@ func (s *Service) GetByID(ctx context.Context, userID string) (*Profile, error) 
 		LEFT JOIN medication_logs ml ON ml.medication_id=m.id
 		WHERE u.id=$1
 		GROUP BY u.id, ep.health_status_override`,
-		userID,
+		userID, dayStart, dayEnd,
 	).Scan(
 		&profile.ID, &profile.PhoneNumber, &profile.Email, &profile.Name, &profile.Age,
 		&profile.City, &profile.Role, &profile.AvatarURL, &profile.HealthStatusOverride,
@@ -110,6 +139,133 @@ func (s *Service) GetEldersForCaregiver(ctx context.Context, caregiverID string)
 		profiles = append(profiles, *profile)
 	}
 	return profiles, rows.Err()
+}
+
+func (s *Service) CreateCaregiverLinkCode(ctx context.Context, elderID string) (*CaregiverLinkCode, error) {
+	if allowed, err := s.userHasRole(ctx, elderID, "ELDER"); err != nil {
+		return nil, err
+	} else if !allowed {
+		return nil, ErrRoleNotAllowed
+	}
+	code, err := newLinkCode()
+	if err != nil {
+		return nil, fmt.Errorf("generate caregiver link code: %w", err)
+	}
+	expiresAt := time.Now().UTC().Add(linkCodeLifetime)
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO caregiver_link_codes(elder_id, code_hash, expires_at)
+		VALUES($1,$2,$3)
+		ON CONFLICT(elder_id) DO UPDATE SET
+			code_hash=EXCLUDED.code_hash,
+			expires_at=EXCLUDED.expires_at,
+			created_at=NOW()`,
+		elderID, hashLinkCode(code), expiresAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store caregiver link code: %w", err)
+	}
+	return &CaregiverLinkCode{Code: formatLinkCode(code), ExpiresAt: expiresAt}, nil
+}
+
+func (s *Service) LinkElder(ctx context.Context, caregiverID, code string) (*Profile, error) {
+	normalized := normalizeLinkCode(code)
+	if len(normalized) != linkCodeLength {
+		return nil, ErrInvalidLinkCode
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	var caregiverRole string
+	if err := tx.QueryRowContext(ctx, `SELECT role FROM users WHERE id=$1`, caregiverID).Scan(&caregiverRole); err != nil {
+		return nil, fmt.Errorf("read caregiver role: %w", err)
+	}
+	if caregiverRole != "CAREGIVER" {
+		return nil, ErrRoleNotAllowed
+	}
+
+	var elderID string
+	err = tx.QueryRowContext(ctx, `
+		SELECT code.elder_id::text
+		FROM caregiver_link_codes code
+		JOIN users elder ON elder.id=code.elder_id AND elder.role='ELDER'
+		WHERE code.code_hash=$1 AND code.expires_at > NOW()
+		FOR UPDATE OF code`, hashLinkCode(normalized),
+	).Scan(&elderID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrInvalidLinkCode
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read caregiver link code: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO caregiver_elder_links(caregiver_id, elder_id)
+		VALUES($1,$2)
+		ON CONFLICT(caregiver_id, elder_id) DO NOTHING`, caregiverID, elderID); err != nil {
+		return nil, fmt.Errorf("link caregiver to elder: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM caregiver_link_codes WHERE elder_id=$1`, elderID); err != nil {
+		return nil, fmt.Errorf("consume caregiver link code: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return s.GetByID(ctx, elderID)
+}
+
+func (s *Service) UnlinkElder(ctx context.Context, caregiverID, elderID string) error {
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM caregiver_elder_links WHERE caregiver_id=$1 AND elder_id=$2`,
+		caregiverID, elderID,
+	)
+	if err != nil {
+		return fmt.Errorf("unlink elder: %w", err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return ErrLinkNotFound
+	}
+	return nil
+}
+
+func (s *Service) userHasRole(ctx context.Context, userID, role string) (bool, error) {
+	var allowed bool
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND role=$2)`, userID, role).Scan(&allowed)
+	return allowed, err
+}
+
+func newLinkCode() (string, error) {
+	random := make([]byte, linkCodeLength)
+	if _, err := rand.Read(random); err != nil {
+		return "", err
+	}
+	code := make([]byte, linkCodeLength)
+	for index, value := range random {
+		code[index] = linkCodeAlphabet[int(value)%len(linkCodeAlphabet)]
+	}
+	return string(code), nil
+}
+
+func normalizeLinkCode(code string) string {
+	return strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(code), "-", ""))
+}
+
+func formatLinkCode(code string) string {
+	normalized := normalizeLinkCode(code)
+	if len(normalized) != linkCodeLength {
+		return normalized
+	}
+	return normalized[:4] + "-" + normalized[4:]
+}
+
+func hashLinkCode(code string) string {
+	sum := sha256.Sum256([]byte(normalizeLinkCode(code)))
+	return hex.EncodeToString(sum[:])
 }
 
 func healthStatus(missed int) string {

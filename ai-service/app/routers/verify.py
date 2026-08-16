@@ -1,57 +1,43 @@
-"""
-Router: Speaker Verification
+"""One-to-one ECAPA speaker verification."""
 
-Pipeline (W5):
-    Audio file (incoming voice)
-        ↓
-    Resample to 16 kHz mono
-        ↓
-    ECAPA-TDNN → 192-dim embedding
-        ↓
-    Cosine similarity vs. stored enrollment embedding (passed from Go backend)
-        ↓
-    similarity >= 0.80  →  { "passed": true,  "score": float }
-    similarity <  0.80  →  { "passed": false, "score": float }
-"""
-
-from fastapi import APIRouter, UploadFile, File, Form
-from fastapi.responses import JSONResponse
 import json
 
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+
+from app.models.ecapa import (
+    EcapaTDNN,
+    InvalidEmbeddingError,
+    ModelUnavailableError,
+    validate_embedding,
+)
+from app.services.audio import (
+    AudioValidationError,
+    remove_temporary_audio,
+    save_uploaded_audio,
+)
+
 router = APIRouter()
+IMPLEMENTED = True
+
+
+def model_provider() -> EcapaTDNN:
+    return EcapaTDNN.shared()
 
 
 @router.post("/")
 async def verify_speaker(
     audio: UploadFile = File(...),
-    enrollment_embedding: str = Form(...),  # JSON-serialized list[float] from Go backend
+    enrollment_embedding: str = Form(...),
 ):
-    """
-    Verify whether the speaker in `audio` matches the `enrollment_embedding`.
-
-    TODO(W5) — Step by step:
-    1. Save audio to a temp file (same as enroll.py step 1).
-
-    2. Deserialize enrollment_embedding:
-           stored_vec = json.loads(enrollment_embedding)  # list[float]
-
-    3. Extract embedding from incoming audio:
-           model = EcapaTDNN()
-           incoming_vec = model.extract_embedding(tmp_path)
-
-    4. Compute cosine similarity:
-           score = model.cosine_similarity(incoming_vec, stored_vec)
-
-    5. Apply threshold (read from env SV_COSINE_THRESHOLD, default 0.80):
-           passed = score >= float(os.getenv("SV_COSINE_THRESHOLD", "0.80"))
-
-    6. Clean up temp file.
-
-    7. Return:
-           { "passed": bool, "score": float }
-    """
-    # TODO(W5): implement the steps above
-    return JSONResponse(
-        status_code=501,
-        content={"status": "not_implemented", "detail": "Verification endpoint — see TODO(W5)"},
-    )
+    try:
+        enrolled = validate_embedding(json.loads(enrollment_embedding))
+        path = await save_uploaded_audio(audio)
+    except (AudioValidationError, InvalidEmbeddingError, json.JSONDecodeError) as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(error)) from error
+    try:
+        passed, score = model_provider().verify(path, enrolled)
+        return {"passed": passed, "score": score}
+    except (InvalidEmbeddingError, ModelUnavailableError) as error:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(error)) from error
+    finally:
+        remove_temporary_audio(path)

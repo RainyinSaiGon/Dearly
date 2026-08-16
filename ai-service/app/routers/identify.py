@@ -1,64 +1,59 @@
-"""
-Router: Speaker Identification (SID)
+"""One-to-many ECAPA speaker identification."""
 
-Pipeline (W5):
-    Audio file (incoming voice)
-        ↓
-    ECAPA-TDNN → 192-dim embedding
-        ↓
-    Cosine similarity vs. ALL enrolled speakers in the system
-        ↓
-    Best match above threshold  →  { "user_id": str, "score": float }
-    No match                    →  { "user_id": null, "score": float }
-
-Unlike SV (1-to-1), SID is 1-to-N: we compare against every enrolled user.
-"""
-
-from fastapi import APIRouter, UploadFile, File, Form
-from fastapi.responses import JSONResponse
 import json
+from typing import Any
+
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+
+from app.models.ecapa import (
+    EcapaTDNN,
+    InvalidEmbeddingError,
+    ModelUnavailableError,
+    validate_embedding,
+)
+from app.services.audio import (
+    AudioValidationError,
+    remove_temporary_audio,
+    save_uploaded_audio,
+)
 
 router = APIRouter()
+IMPLEMENTED = True
+
+
+def model_provider() -> EcapaTDNN:
+    return EcapaTDNN.shared()
+
+
+def parse_enrolled_speakers(serialized: str) -> list[dict[str, Any]]:
+    parsed = json.loads(serialized)
+    if not isinstance(parsed, list):
+        raise ValueError("enrolled_speakers must be a list")
+    speakers = []
+    dimension = None
+    for item in parsed:
+        if not isinstance(item, dict) or not str(item.get("user_id", "")).strip():
+            raise ValueError("each enrolled speaker requires user_id")
+        embedding = validate_embedding(item.get("embedding"), expected_dimension=dimension)
+        dimension = len(embedding)
+        speakers.append({"user_id": str(item["user_id"]), "embedding": embedding})
+    return speakers
 
 
 @router.post("/")
 async def identify_speaker(
     audio: UploadFile = File(...),
-    enrolled_speakers: str = Form(...),  # JSON: [{"user_id": str, "embedding": list[float]}]
+    enrolled_speakers: str = Form(...),
 ):
-    """
-    Identify which enrolled speaker is present in `audio`.
-
-    TODO(W5) — Step by step:
-    1. Save audio to a temp file.
-
-    2. Deserialize enrolled_speakers:
-           speakers = json.loads(enrolled_speakers)
-           # [{"user_id": "uuid", "embedding": [0.12, -0.03, ...]}, ...]
-
-    3. Extract embedding from incoming audio:
-           model = EcapaTDNN()
-           incoming_vec = model.extract_embedding(tmp_path)
-
-    4. Compute cosine similarity against each enrolled speaker:
-           scores = [
-               (s["user_id"], model.cosine_similarity(incoming_vec, s["embedding"]))
-               for s in speakers
-           ]
-
-    5. Find the best match:
-           best_user_id, best_score = max(scores, key=lambda x: x[1])
-
-    6. Apply threshold (same SV_COSINE_THRESHOLD = 0.80):
-           if best_score >= threshold:
-               return { "user_id": best_user_id, "score": best_score }
-           else:
-               return { "user_id": null, "score": best_score }
-
-    7. Clean up temp file.
-    """
-    # TODO(W5): implement the steps above
-    return JSONResponse(
-        status_code=501,
-        content={"status": "not_implemented", "detail": "Identification endpoint — see TODO(W5)"},
-    )
+    try:
+        speakers = parse_enrolled_speakers(enrolled_speakers)
+        path = await save_uploaded_audio(audio)
+    except (AudioValidationError, InvalidEmbeddingError, json.JSONDecodeError, ValueError) as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(error)) from error
+    try:
+        user_id, score = model_provider().identify(path, speakers)
+        return {"user_id": user_id, "score": score}
+    except (InvalidEmbeddingError, ModelUnavailableError) as error:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(error)) from error
+    finally:
+        remove_temporary_audio(path)

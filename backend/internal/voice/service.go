@@ -3,8 +3,12 @@ package voice
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +21,36 @@ import (
 
 	"github.com/dearly/backend/pkg/events"
 )
+
+var (
+	ErrInvalidIntent = errors.New("intent is not protected by speaker verification")
+	ErrInvalidGrant  = errors.New("voice verification grant is invalid or expired")
+)
+
+const (
+	IntentCallContact   = "CALL_CONTACT"
+	IntentMarkTaken     = "MARK_TAKEN"
+	IntentUpdateSetting = "UPDATE_SETTINGS"
+	grantLifetime       = 2 * time.Minute
+)
+
+var protectedIntents = map[string]struct{}{
+	IntentCallContact:   {},
+	IntentMarkTaken:     {},
+	IntentUpdateSetting: {},
+}
+
+type VerificationResult struct {
+	Passed            bool    `json:"passed"`
+	Score             float64 `json:"score"`
+	VerificationGrant string  `json:"verification_grant,omitempty"`
+	ExpiresIn         int64   `json:"expires_in,omitempty"`
+}
+
+type enrolledSpeaker struct {
+	UserID    string    `json:"user_id"`
+	Embedding []float32 `json:"embedding"`
+}
 
 type Service struct {
 	db           *sql.DB
@@ -112,36 +146,61 @@ func (s *Service) ComputeAverageEmbedding(ctx context.Context, userID string) er
 	return err
 }
 
-func (s *Service) Verify(ctx context.Context, userID, filename string, audioBytes []byte) (bool, float64, error) {
+func (s *Service) Verify(ctx context.Context, userID, intent, filename string, audioBytes []byte) (*VerificationResult, error) {
+	intent = normalizeIntent(intent)
+	if _, allowed := protectedIntents[intent]; !allowed {
+		return nil, ErrInvalidIntent
+	}
 	var encoded []byte
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT embedding_vector FROM voice_enrollments WHERE user_id=$1 AND phrase_index=-1`,
 		userID).Scan(&encoded); err != nil {
-		return false, 0, fmt.Errorf("load enrollment: %w", err)
+		return nil, fmt.Errorf("load enrollment: %w", err)
 	}
 	vector, err := decodeVector(encoded)
 	if err != nil {
-		return false, 0, err
+		return nil, err
 	}
 	vectorJSON, _ := json.Marshal(vector)
 	response, err := s.multipart(ctx, "/verify/", filename, audioBytes,
 		map[string]string{"enrollment_embedding": string(vectorJSON)}, nil)
 	if err != nil {
-		return false, 0, err
+		return nil, err
 	}
 	var result struct {
 		Passed bool    `json:"passed"`
 		Score  float64 `json:"score"`
 	}
 	if err := json.Unmarshal(response, &result); err != nil {
-		return false, 0, err
+		return nil, err
 	}
-	_ = s.events.Publish(ctx, "voice.verification.completed", userID, map[string]any{"passed": result.Passed, "score": result.Score})
-	return result.Passed, result.Score, nil
+	verification := &VerificationResult{Passed: result.Passed, Score: result.Score}
+	if result.Passed {
+		grant, err := s.issueVerificationGrant(ctx, userID, intent)
+		if err != nil {
+			return nil, err
+		}
+		verification.VerificationGrant = grant
+		verification.ExpiresIn = int64(grantLifetime.Seconds())
+	}
+	_ = s.events.Publish(ctx, "voice.verification.completed", userID, map[string]any{
+		"intent": intent, "passed": result.Passed, "score": result.Score,
+	})
+	return verification, nil
 }
 
 func (s *Service) Query(ctx context.Context, userID, filename string, audioBytes []byte) (map[string]interface{}, error) {
-	response, err := s.multipart(ctx, "/query/", filename, audioBytes, nil, map[string]string{"X-User-ID": userID})
+	speakers, err := s.enrolledSpeakers(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	serializedSpeakers, err := json.Marshal(speakers)
+	if err != nil {
+		return nil, err
+	}
+	response, err := s.multipart(ctx, "/query/", filename, audioBytes,
+		map[string]string{"enrolled_speakers": string(serializedSpeakers)},
+		map[string]string{"X-User-ID": userID})
 	if err != nil {
 		return nil, err
 	}
@@ -153,6 +212,74 @@ func (s *Service) Query(ctx context.Context, userID, filename string, audioBytes
 		"intent": result["intent"], "sv_required": result["sv_required"], "sv_passed": result["sv_passed"],
 	})
 	return result, nil
+}
+
+func (s *Service) ConsumeVerificationGrant(ctx context.Context, userID, intent, grant string) error {
+	intent = normalizeIntent(intent)
+	if _, allowed := protectedIntents[intent]; !allowed || strings.TrimSpace(grant) == "" {
+		return ErrInvalidGrant
+	}
+	var consumed string
+	err := s.db.QueryRowContext(ctx, `
+		DELETE FROM voice_verification_grants
+		WHERE token_hash=$1 AND user_id=$2 AND intent=$3 AND expires_at > NOW()
+		RETURNING token_hash`, hashGrant(grant), userID, intent,
+	).Scan(&consumed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrInvalidGrant
+	}
+	if err != nil {
+		return fmt.Errorf("consume verification grant: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) issueVerificationGrant(ctx context.Context, userID, intent string) (string, error) {
+	random := make([]byte, 32)
+	if _, err := rand.Read(random); err != nil {
+		return "", fmt.Errorf("generate verification grant: %w", err)
+	}
+	grant := base64.RawURLEncoding.EncodeToString(random)
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO voice_verification_grants(token_hash, user_id, intent, expires_at)
+		VALUES($1,$2,$3,$4)`, hashGrant(grant), userID, intent, time.Now().UTC().Add(grantLifetime))
+	if err != nil {
+		return "", fmt.Errorf("store verification grant: %w", err)
+	}
+	return grant, nil
+}
+
+func (s *Service) enrolledSpeakers(ctx context.Context, userID string) ([]enrolledSpeaker, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT user_id::text, embedding_vector
+		FROM voice_enrollments WHERE phrase_index=-1 AND user_id=$1`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("load enrolled speakers: %w", err)
+	}
+	defer rows.Close()
+	speakers := make([]enrolledSpeaker, 0)
+	for rows.Next() {
+		var userID string
+		var encoded []byte
+		if err := rows.Scan(&userID, &encoded); err != nil {
+			return nil, err
+		}
+		embedding, err := decodeVector(encoded)
+		if err != nil {
+			return nil, err
+		}
+		speakers = append(speakers, enrolledSpeaker{UserID: userID, Embedding: embedding})
+	}
+	return speakers, rows.Err()
+}
+
+func normalizeIntent(intent string) string {
+	return strings.ToUpper(strings.TrimSpace(intent))
+}
+
+func hashGrant(grant string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(grant)))
+	return hex.EncodeToString(sum[:])
 }
 
 func (s *Service) Reset(ctx context.Context, userID string) error {

@@ -42,6 +42,26 @@ class ContactRepository @Inject constructor(
         )
         dao.upsertAll(listOf(created.toEntity()))
     }
+
+    suspend fun update(elderId: String?, item: Contact) {
+        val updated = api.updateContact(
+            item.id,
+            ContactRequest(
+                elderId = elderId,
+                nickname = item.nickname,
+                fullName = item.fullName,
+                phoneNumber = item.phoneNumber,
+                relationship = item.relationship,
+                callMethod = item.callMethod.name
+            )
+        )
+        dao.upsertAll(listOf(updated.toEntity()))
+    }
+
+    suspend fun delete(elderId: String?, contactId: String) {
+        api.deleteContact(contactId, elderId)
+        refresh(elderId)
+    }
 }
 
 private fun ContactEntity.toDomain() = Contact(

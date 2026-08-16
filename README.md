@@ -106,6 +106,16 @@ cp .env.example .env
    OPENAI_API_KEY=sk-...your-key...
    ```
 
+### Step 3b — Add Google Cloud credentials
+
+Enable Google Cloud Text-to-Speech, create a service-account key, and save it as:
+
+```text
+ai-service/gcp-sa.json
+```
+
+The file is ignored by Git and mounted read-only at `/run/secrets/gcp-sa.json`.
+
 ---
 
 ### Step 4 — Start backend services
@@ -127,7 +137,12 @@ Verify everything is running:
 ```bash
 curl http://localhost:8080/health   # → {"status":"ok"}
 docker compose exec ai-service curl -f http://localhost:5000/health
+docker compose exec ai-service curl -f http://localhost:5000/ready
 ```
+
+`/health` verifies that the AI process is alive. `/ready` returns `503` until an
+ECAPA checkpoint or pretrained source, Google credentials, and all AI pipeline
+capabilities are configured.
 
 ---
 
@@ -138,3 +153,15 @@ docker compose exec ai-service curl -f http://localhost:5000/health
 3. Wait for Gradle sync to complete
 4. Create an emulator (API 33+) or connect a physical device
 5. Run the app ▶
+
+Debug builds use `http://10.0.2.2:8080/api/v1/` by default and permit cleartext traffic
+for local development. Release builds disable cleartext traffic and must be given an
+HTTPS endpoint:
+
+```powershell
+cd android
+.\gradlew.bat assembleRelease -PDEARLY_RELEASE_API_BASE_URL=https://api.example.com/api/v1/
+```
+
+For tagged GitHub releases, configure the repository variable
+`DEARLY_RELEASE_API_BASE_URL` with the same trailing-slash HTTPS URL.

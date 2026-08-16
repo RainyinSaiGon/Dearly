@@ -12,7 +12,7 @@ gcp-sa.json
 *-service-account*.json
 
 # ─── Model weights (too large for git — use GDrive / DVC) ─────────
-models/
+/models/
 *.ckpt
 *.pt
 *.pth
@@ -21,6 +21,7 @@ models/
 # ─── Android ───────────────────────────────────────────────────────
 android/.gradle/
 android/.gradle-user/
+android/.kotlin/
 android/app/.gradle/
 android/build/
 android/app/build/

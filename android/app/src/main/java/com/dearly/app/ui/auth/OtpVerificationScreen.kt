@@ -41,7 +41,11 @@ private val OtpGreen = Color(0xFF1B4332)
 private val OtpBackground = Color(0xFFF8F9F5)
 
 @Composable
-fun OtpVerificationScreen(onContinue: () -> Unit) {
+fun OtpVerificationScreen(
+    onContinue: (String) -> Unit,
+    busy: Boolean = false,
+    error: String? = null
+) {
     val otp = remember { mutableStateListOf("", "", "", "", "", "") }
 
     Box(
@@ -68,6 +72,9 @@ fun OtpVerificationScreen(onContinue: () -> Unit) {
         Text("Gửi lại mã sau 59s", color = Color(0xFF414844), fontSize = 14.sp)
         Spacer(modifier = Modifier.height(12.dp))
         Text("Gửi lại mã", color = Color(0xFF6B7280), fontSize = 11.sp)
+        error?.let {
+            Text(it, color = Color(0xFFC62828), fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+        }
         Spacer(modifier = Modifier.height(14.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             otp.forEachIndexed { index, digit ->
@@ -84,7 +91,8 @@ fun OtpVerificationScreen(onContinue: () -> Unit) {
         }
         }
         Button(
-            onClick = onContinue,
+            onClick = { onContinue(otp.joinToString("")) },
+            enabled = !busy && otp.all { it.length == 1 },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
