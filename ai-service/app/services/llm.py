@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import threading
 from typing import Any
 
 PROTECTED_INTENTS = {"CALL_CONTACT", "MARK_TAKEN", "UPDATE_SETTINGS"}
@@ -23,8 +24,19 @@ For CALL_CONTACT extract contact_name. For MARK_TAKEN extract medication_name wh
 
 
 class LLMService:
+    _instance: "LLMService | None" = None
+    _lock = threading.Lock()
+
     def __init__(self, client: Any | None = None) -> None:
         self._client = client
+
+    @classmethod
+    def shared(cls) -> "LLMService":
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = cls()
+        return cls._instance
 
     async def classify_intent(self, transcript: str) -> dict[str, Any]:
         transcript = transcript.strip()

@@ -1,6 +1,8 @@
-"""Voice transcription, SID, intent classification, and speech response."""
+"""Voice transcription, SID, and intent classification.
 
-import base64
+The Android client turns Vietnamese response text into speech locally, so this
+service neither needs a cloud TTS credential nor returns synthesized audio.
+"""
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile, status
 
@@ -13,7 +15,6 @@ from app.services.audio import (
     save_uploaded_audio,
 )
 from app.services.llm import LLMService
-from app.services.tts import TTSService, TTSUnavailableError
 
 router = APIRouter()
 IMPLEMENTED = True
@@ -28,11 +29,7 @@ def model_provider() -> EcapaTDNN:
 
 
 def llm_provider() -> LLMService:
-    return LLMService()
-
-
-def tts_provider() -> TTSService:
-    return TTSService()
+    return LLMService.shared()
 
 
 @router.post("/")
@@ -53,21 +50,18 @@ async def voice_query(
         if speakers:
             identified_user_id, identification_score = model_provider().identify(path, speakers)
         intent = await llm_provider().classify_intent(transcript)
-        response_audio, response_mime = await tts_provider().synthesize(intent["response_text"])
         return {
             "transcript": transcript,
             "intent": intent["intent"],
             "entities": intent["entities"],
             "response_text": intent["response_text"],
-            "response_audio_base64": base64.b64encode(response_audio).decode("ascii"),
-            "response_audio_mime": response_mime,
             "sv_required": intent["requires_sv"],
             "sv_passed": None,
             "identified_user_id": identified_user_id,
             "identification_score": identification_score,
             "request_user_id": x_user_id,
         }
-    except (ASRUnavailableError, ModelUnavailableError, TTSUnavailableError) as error:
+    except (ASRUnavailableError, ModelUnavailableError) as error:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(error)) from error
     finally:
         remove_temporary_audio(path)

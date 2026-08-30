@@ -157,9 +157,10 @@ class DearlyViewModel @Inject constructor(
         try {
             val result = voiceRepository.query(audio)
             _uiState.value = _uiState.value.copy(
-                voiceTranscript = result.transcript,
-                voiceMessage = result.responseText,
-                voiceRequiresVerification = result.svRequired
+                voiceTranscript = result.query.transcript,
+                voiceMessage = result.query.responseText,
+                voiceRequiresVerification = result.query.svRequired,
+                error = result.speechWarning
             )
         } finally {
             audio.delete()

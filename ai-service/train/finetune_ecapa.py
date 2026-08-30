@@ -5,6 +5,7 @@ import csv
 import json
 import math
 import random
+import shutil
 from pathlib import Path
 
 import torch
@@ -18,6 +19,17 @@ from torch.utils.data import DataLoader, Dataset
 AUDIO_SUFFIXES = {".flac", ".m4a", ".mp3", ".ogg", ".wav"}
 
 
+def audio_duration(audio_path: Path) -> float:
+    info = getattr(torchaudio, "info", None)
+    if info is not None:
+        metadata = info(str(audio_path))
+        return metadata.num_frames / metadata.sample_rate
+    signal, sample_rate = torchaudio.load(str(audio_path))
+    if sample_rate <= 0:
+        raise ValueError(f"invalid sample rate in {audio_path}")
+    return signal.shape[-1] / sample_rate
+
+
 def make_manifest(split_directory: Path, output_csv: Path) -> None:
     rows = []
     if not split_directory.is_dir():
@@ -26,13 +38,12 @@ def make_manifest(split_directory: Path, output_csv: Path) -> None:
         for audio_path in sorted(speaker_directory.rglob("*")):
             if audio_path.suffix.lower() not in AUDIO_SUFFIXES:
                 continue
-            metadata = torchaudio.info(str(audio_path))
             rows.append(
                 {
                     "utt_id": f"{speaker_directory.name}_{audio_path.stem}",
                     "audio_path": str(audio_path.resolve()),
                     "speaker_id": speaker_directory.name,
-                    "duration": metadata.num_frames / metadata.sample_rate,
+                    "duration": audio_duration(audio_path),
                 }
             )
     if not rows:
@@ -164,6 +175,12 @@ def train(config: dict, device: torch.device) -> dict[str, float | int | str]:
     )
     output_directory = Path(config.get("output_folder", "results/ECAPA"))
     output_directory.mkdir(parents=True, exist_ok=True)
+    checkpoint_backup_directory = config.get("checkpoint_backup_dir")
+    backup_directory = (
+        Path(checkpoint_backup_directory) if checkpoint_backup_directory else None
+    )
+    if backup_directory is not None:
+        backup_directory.mkdir(parents=True, exist_ok=True)
     freeze_until = int(config.get("freeze_until_epoch", 0))
     best_loss = float("inf")
 
@@ -176,10 +193,16 @@ def train(config: dict, device: torch.device) -> dict[str, float | int | str]:
         model.eval()
         with torch.no_grad():
             validation_loss = verification_validation_loss(model, validation_loader, device)
+        if not math.isfinite(train_loss) or not math.isfinite(validation_loss):
+            raise RuntimeError(
+                f"non-finite loss at epoch {epoch}: "
+                f"train_loss={train_loss}, val_loss={validation_loss}"
+            )
         scheduler.step()
         print(f"epoch={epoch} train_loss={train_loss:.5f} val_loss={validation_loss:.5f}")
         if validation_loss < best_loss:
             best_loss = validation_loss
+            checkpoint_path = output_directory / "best_model.ckpt"
             torch.save(
                 {
                     "embedding_model": model.embedding_model.state_dict(),
@@ -187,8 +210,10 @@ def train(config: dict, device: torch.device) -> dict[str, float | int | str]:
                     "epoch": epoch,
                     "validation_loss": validation_loss,
                 },
-                output_directory / "best_model.ckpt",
+                checkpoint_path,
             )
+            if backup_directory is not None:
+                shutil.copy2(checkpoint_path, backup_directory / checkpoint_path.name)
 
     summary = {
         "best_validation_loss": best_loss,
@@ -199,6 +224,11 @@ def train(config: dict, device: torch.device) -> dict[str, float | int | str]:
         json.dumps(summary, indent=2),
         encoding="utf-8",
     )
+    if backup_directory is not None:
+        shutil.copy2(
+            output_directory / "training_summary.json",
+            backup_directory / "training_summary.json",
+        )
     return summary
 
 

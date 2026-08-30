@@ -38,11 +38,6 @@ class FakeLLM:
         }
 
 
-class FakeTTS:
-    async def synthesize(self, _text):
-        return b"mp3", "audio/mpeg"
-
-
 @pytest.fixture
 def fake_model(monkeypatch):
     model = FakeSpeakerModel()
@@ -87,7 +82,6 @@ def test_verification_and_identification(fake_model):
 def test_query_runs_full_non_authoritative_pipeline(fake_model, monkeypatch):
     monkeypatch.setattr(query, "asr_provider", lambda: FakeASR())
     monkeypatch.setattr(query, "llm_provider", lambda: FakeLLM())
-    monkeypatch.setattr(query, "tts_provider", lambda: FakeTTS())
 
     response = client.post(
         "/query/",
@@ -106,9 +100,8 @@ def test_query_runs_full_non_authoritative_pipeline(fake_model, monkeypatch):
     assert body["sv_required"] is True
     assert body["sv_passed"] is None
     assert body["identified_user_id"] == "elder-1"
-    assert body["response_audio_base64"] == "bXAz"
-
-
+    assert body["response_text"] == "Bác vui lòng xác minh giọng nói."
+    assert "response_audio_base64" not in body
 @pytest.mark.asyncio
 async def test_local_intent_policy_cannot_be_weakened_by_missing_openai(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)

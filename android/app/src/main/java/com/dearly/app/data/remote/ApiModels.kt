@@ -105,8 +105,6 @@ data class VoiceQueryDto(
     val intent: String,
     val entities: Map<String, Any?>,
     @SerializedName("response_text") val responseText: String,
-    @SerializedName("response_audio_base64") val responseAudioBase64: String?,
-    @SerializedName("response_audio_mime") val responseAudioMime: String?,
     @SerializedName("sv_required") val svRequired: Boolean,
     @SerializedName("sv_passed") val svPassed: Boolean?,
     @SerializedName("identified_user_id") val identifiedUserId: String?

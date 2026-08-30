@@ -6,17 +6,25 @@ Provides:
   - Speaker Identification (SID)
   - ASR (Whisper)
   - LLM intent routing (OpenAI GPT-4o)
-  - TTS (Google Cloud)
+  - Vietnamese TTS (on-device Android)
 """
 
-import os
 from pathlib import Path
 
 from fastapi import FastAPI, status
 from fastapi.responses import JSONResponse
+from dotenv import load_dotenv
 
 from app.models.ecapa import EcapaTDNN
 from app.routers import enroll, identify, query, verify
+
+
+# Local runs start from either the repository root or ai-service/. Docker uses
+# env_file, so loading these files is harmless there and makes local Uvicorn
+# runs use the same configuration contract.
+_repository_root = Path(__file__).resolve().parents[2]
+load_dotenv(_repository_root / ".env")
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 app = FastAPI(
     title="Dearly AI Service",
@@ -34,7 +42,6 @@ async def health_check():
 async def readiness_check():
     file_checks = {
         "model": EcapaTDNN.configured_model_exists(),
-        "google_credentials": _file_is_available("GOOGLE_APPLICATION_CREDENTIALS"),
     }
     capability_checks = {
         "enrollment": enroll.IMPLEMENTED,
@@ -52,13 +59,6 @@ async def readiness_check():
             },
         )
     return {"status": "ready", "checks": checks}
-
-
-def _file_is_available(environment_variable: str) -> bool:
-    configured_path = os.getenv(environment_variable, "").strip()
-    return bool(configured_path and Path(configured_path).is_file())
-
-
 app.include_router(enroll.router, prefix="/enroll", tags=["enrollment"])
 app.include_router(verify.router, prefix="/verify", tags=["verification"])
 app.include_router(identify.router, prefix="/identify", tags=["identification"])

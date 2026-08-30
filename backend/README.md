@@ -51,7 +51,9 @@ The API verifies the token with Firebase Admin, upserts the user, and returns a 
 Contacts and medications accept an optional `elder_id`. Elders may only use their own ID. Caregivers must have a row in `caregiver_elder_links`.
 
 Voice enrollment stores five phrase embeddings and an averaged profile. `POST /voice/query`
-uses that profile for SID and intent classification but never authorizes an action. For a
+uses the stored profile for the current enrolled user and intent classification but never
+authorizes an action. It returns Vietnamese response text; Android converts that text to
+speech using its local `vi-VN` TextToSpeech engine. For a
 protected intent, the elder sends a second recording to `POST /voice/verify` with `intent`.
 A successful verification returns a random, two-minute, one-use grant. Protected endpoints
 consume the grant from `X-Voice-Grant`; for example, `POST /medications/:id/taken` accepts only

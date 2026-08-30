@@ -2,6 +2,8 @@
 .env
 *.json
 !.env.example
+!ai-service/train/kaggle/kernel-metadata.template.json
+!ai-service/train/colab/run_config.template.json
 # Re-allow non-secret JSON (package.json etc.) if needed:
 # !some/path/package.json
 

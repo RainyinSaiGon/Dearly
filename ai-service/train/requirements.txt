@@ -1,0 +1,15 @@
+# Training/data-preparation dependencies. Install from ai-service/.
+# Keep this separate from the AI serving stack so local training does not
+# install Whisper, OpenAI, or Google TTS unnecessarily.
+numpy>=1.26.0
+PyYAML>=6.0.0
+setuptools<80
+# SpeechBrain 1.1.0 supports the current Hugging Face Hub API. Keep the
+# PyTorch pair pinned rather than allowing pip to mix incompatible releases.
+torch==2.5.1
+torchaudio==2.5.1
+speechbrain==1.1.0
+datasets>=3.0.0,<5.0.0
+# Keep the resolver within the range supported by datasets 4.x.
+fsspec[http]==2026.2.0
+soundfile>=0.12.1

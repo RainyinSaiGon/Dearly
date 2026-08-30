@@ -4,12 +4,13 @@ uvicorn[standard]==0.30.0
 python-multipart==0.0.9
 
 # Build utilities
-setuptools
+setuptools<80
 
 # Speaker embedding (ECAPA-TDNN)
-speechbrain==1.0.0
-torch>=2.1.0
-torchaudio>=2.1.0
+speechbrain==1.1.0
+# Keep torch and torchaudio on the same release line.
+torch==2.5.1
+torchaudio==2.5.1
 
 # ASR
 openai-whisper
@@ -17,10 +18,8 @@ openai-whisper
 # LLM
 openai>=1.40.0
 
-# TTS
-google-cloud-texttospeech>=2.16.0
-
 # Utilities
 numpy>=1.26.0
 python-dotenv>=1.0.0
 PyYAML>=6.0.0
+fsspec[http]==2026.2.0

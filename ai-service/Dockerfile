@@ -1,5 +1,5 @@
 # ─── Python AI Service Dockerfile ─────────────────────────────────
-# Uses CUDA base for GPU inference (falls back to CPU if no GPU)
+# Local Docker Desktop inference runs on CPU. Model training remains on Colab GPU.
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -13,6 +13,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Pre-install pip & setuptools for build-isolation wheel builds (openai-whisper)
 RUN pip install --no-cache-dir --upgrade pip setuptools
+
+# PyPI's Linux Torch wheel pulls the CUDA runtime even in a CPU-only image.
+# Install the matching official CPU wheels first so requirements.txt reuses them.
+RUN pip install --no-cache-dir \
+    --index-url https://download.pytorch.org/whl/cpu \
+    torch==2.5.1+cpu \
+    torchaudio==2.5.1+cpu
 
 # Install Python deps
 COPY requirements.txt .

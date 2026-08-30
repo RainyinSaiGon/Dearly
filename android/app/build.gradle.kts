@@ -4,8 +4,16 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
-    id("com.google.dagger.hilt.android")
-    id("com.google.gms.google-services")
+    id("com.google.dagger.hilt.andro
+val googleServicesConfig = layout.projectDirectory.file("google-services.json").asFile
+
+if (googleServicesConfig.isFile) {
+    apply(plugin = "com.google.gms.google-services")
+} else {
+    logger.warn(
+        "google-services.json was not found; Firebase resource generation is disabled for this build. " +
+            "Add the file to android/app to enable Firebase."
+    )
 }
 
 val debugApiBaseUrl = providers.gradleProperty("DEARLY_API_BASE_URL")
@@ -33,6 +41,10 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
+
+        if (!googleServicesConfig.isFile) {
+            resValue("string", "default_web_client_id", "")
+        }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -62,6 +74,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        resValues = true
     }
     packaging {
         resources {
@@ -81,6 +94,18 @@ configurations.all {
     resolutionStrategy {
         force("org.jetbrains.kotlin:kotlin-metadata-jvm:2.1.0")
         force("org.jetbrains.kotlinx:kotlinx-metadata-jvm:0.9.0")
+    }
+}
+
+// CI can compile and test debug variants without committing Firebase credentials,
+// but a published build must always contain a real Firebase configuration.
+tasks.configureEach {
+    if (name == "preReleaseBuild") {
+        doFirst {
+            check(googleServicesConfig.isFile) {
+                "google-services.json is required for release builds. Place it in android/app."
+            }
+        }
     }
 }
 

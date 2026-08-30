@@ -65,7 +65,12 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./backend/firebase-sa.json:/run/secrets/firebase-sa.json:ro
+      - type: bind
+        source: ./backend/firebase-sa.json
+        target: /run/secrets/firebase-sa.json
+        read_only: true
+        bind:
+          create_host_path: false
     depends_on:
       postgres:
         condition: service_healthy
@@ -92,7 +97,12 @@ services:
     environment:
       KAFKA_BROKERS: kafka:9092
     volumes:
-      - ./backend/firebase-sa.json:/run/secrets/firebase-sa.json:ro
+      - type: bind
+        source: ./backend/firebase-sa.json
+        target: /run/secrets/firebase-sa.json
+        read_only: true
+        bind:
+          create_host_path: false
     depends_on:
       go-api:
         condition: service_healthy
@@ -109,12 +119,6 @@ services:
       - "5000"
     volumes:
       - ./models:/models
-      - type: bind
-        source: ./ai-service/gcp-sa.json
-        target: /run/secrets/gcp-sa.json
-        read_only: true
-        bind:
-          create_host_path: false
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/ready"]
       interval: 15s

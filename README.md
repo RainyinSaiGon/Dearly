@@ -17,7 +17,9 @@ Dearly/
 ├── docker-compose.yml
 ├── .env.example
 ├── specs.md
-└── project_requirements.md
+├── project_requirements.md
+├── FINAL_PROJECT_REPORT.md  ← report draft grounded in the completed VIVOS run
+└── REPORT_READINESS.md      ← remaining demo and submission evidence
 ```
 
 ---
@@ -106,15 +108,13 @@ cp .env.example .env
    OPENAI_API_KEY=sk-...your-key...
    ```
 
-### Step 3b — Add Google Cloud credentials
+### Step 3b — Enable Vietnamese speech on the Android device
 
-Enable Google Cloud Text-to-Speech, create a service-account key, and save it as:
-
-```text
-ai-service/gcp-sa.json
-```
-
-The file is ignored by Git and mounted read-only at `/run/secrets/gcp-sa.json`.
+Dearly uses Android's on-device `TextToSpeech` engine for response audio. No
+Google Cloud TTS account or `gcp-sa.json` file is required. On the demo device,
+download a Vietnamese voice in **Settings → Text-to-speech output → Google
+Speech Services**, then select Vietnamese (`vi-VN`). The app still shows the
+text response if a Vietnamese voice has not yet been installed.
 
 ---
 
@@ -141,8 +141,27 @@ docker compose exec ai-service curl -f http://localhost:5000/ready
 ```
 
 `/health` verifies that the AI process is alive. `/ready` returns `503` until an
-ECAPA checkpoint or pretrained source, Google credentials, and all AI pipeline
-capabilities are configured.
+ECAPA checkpoint (or pretrained source) and all AI pipeline capabilities are
+configured. Cloud TTS credentials are not part of readiness: Android speaks the
+Vietnamese response text locally.
+
+## Verified ECAPA Experiment
+
+The completed run is `20260829-183455-ecapa-vivos-r4`; its artifacts are stored
+under `models/training/` (gitignored) and should be copied to Drive for
+submission. It fine-tuned SpeechBrain ECAPA-TDNN on a speaker-disjoint VIVOS
+split (41 train / 5 validation / 19 test speakers) on a Tesla T4.
+
+| System | EER | minDCF | SID Top-1 |
+|---|---:|---:|---:|
+| Untouched VoxCeleb ECAPA baseline | 4.40% | 0.002978 | 100.00% |
+| VIVOS fine-tuned ECAPA | 1.28% | 0.001628 | 100.00% |
+
+The deployment checkpoint is `models/ecapa_dearly.ckpt`. The measured EER
+threshold was 0.3456; the application threshold remains 0.80 until it is
+calibrated with representative elderly-user recordings. See
+[FINAL_PROJECT_REPORT.md](FINAL_PROJECT_REPORT.md) and
+[REPORT_READINESS.md](REPORT_READINESS.md) before packaging the submission.
 
 ---
 

@@ -1,7 +1,7 @@
 # Dearly — Technical Specification
 
-> **Version**: 0.3 — FINAL (all decisions confirmed)  
-> **Created**: 2026-08-01 · **Updated**: 2026-08-01  
+> **Version**: 0.4 — implementation and evidence update
+> **Created**: 2026-08-01 · **Updated**: 2026-08-30
 > **Stack**: Android (Kotlin + Jetpack Compose) · Backend (Golang) · AI (ECAPA-TDNN SV/SID + OpenAI LLM)  
 > **Deadline**: Friday, 28 August 2026
 
@@ -62,11 +62,11 @@ The app satisfies the academic project requirements:
 
 | Component | Detail |
 |-----------|--------|
-| Speaker Verification (SV) | **ECAPA-TDNN** — pretrained on **VoxCeleb2** (SpeechBrain checkpoint), fine-tuned on **VoxVietnam** or **Vietnam-Celeb** |
+| Speaker Verification (SV) | **ECAPA-TDNN** — SpeechBrain VoxCeleb checkpoint, fine-tuned/evaluated on speaker-disjoint **VIVOS** |
 | Speaker Identification (SID) | Same ECAPA-TDNN embedding + cosine similarity matching across enrolled profiles |
-| ASR | **Whisper** (multilingual, Vietnamese + English) or Google Cloud STT |
-| NLP / Intent | **OpenAI GPT-4o** (function-calling for task routing) |
-| TTS | Google Cloud Text-to-Speech (Vietnamese voice, `vi-VN-Wavenet`) |
+| ASR | Local **Whisper** configured for Vietnamese |
+| NLP / Intent | OpenAI `gpt-4o-mini` with deterministic local intent fallback |
+| TTS | Android on-device Text-to-Speech using a Vietnamese (`vi-VN`) voice |
 | Wake Word | On-device wake-word engine (e.g., Porcupine or custom) — triggers outside the app |
 
 ---
@@ -80,6 +80,7 @@ The app satisfies the academic project requirements:
 |  | Auth   | | Elder  | |Caregiver|  |
 |  | Module | | UI     | | Setup   |  |
 |  +--------+ +--------+ +---------+  |
+|  | Local Vietnamese TextToSpeech     |
 +------------------+------------------+
                    | HTTPS / REST
                    v
@@ -103,9 +104,6 @@ The app satisfies the academic project requirements:
 |  |  |  LLM Orchestrator    |   |    |
 |  |  |  (Intent + Response) |   |    |
 |  |  +----------------------+   |    |
-|  |  +------+                   |    |
-|  |  | TTS  |                   |    |
-|  |  +------+                   |    |
 |  +-----------------------------+    |
 |         |                            |
 |  +--------------+  +-------------+  |
@@ -131,14 +129,14 @@ Speech Input (AudioRecord)
   Request Analysis & Task Orchestration (LLM)
         |
         +--- General task (no auth required)
-        |         +---> Execute -> TTS -> Voice Response
+        |         +---> Execute -> response text -> Android TTS -> Voice Response
         |
         +--- Protected task -> Speaker Verification (SV)
-        |         +-- PASS -> Execute -> TTS -> Voice Response
-        |         +-- FAIL -> "Xac minh giong noi that bai" -> TTS
+        |         +-- PASS -> Execute -> response text -> Android TTS -> Voice Response
+        |         +-- FAIL -> "Xac minh giong noi that bai" -> Android TTS
         |
         +--- Personalized task -> Speaker Identification (SID)
-                  +-- Match user -> Personalized Execute -> TTS -> Voice Response
+                  +-- Match user -> Personalized Execute -> response text -> Android TTS -> Voice Response
 ```
 
 ---
@@ -416,7 +414,7 @@ direction (IN/OUT), started_at, duration_seconds
 
 | Requirement | Target |
 |-------------|--------|
-| Voice response latency | < 3 seconds end-to-end |
+| Voice response latency | < 3 seconds end-to-end (target; not yet measured end-to-end) |
 | OTP delivery | < 10 seconds |
 | App cold start | < 2 seconds |
 | Offline support | Cached contacts + medication list readable offline |
@@ -428,20 +426,24 @@ direction (IN/OUT), started_at, duration_seconds
 ## 12. Academic Report Checklist (from project_requirements.md)
 
 ### Requirement 1 - Speaker Model
-- [ ] Dataset description (source, size, language)
-- [ ] Train / val / test split rationale
-- [ ] Model architecture (ECAPA-TDNN / RawNet3 / equivalent)
-- [ ] Training procedure (optimizer, epochs, loss function)
-- [ ] Evaluation metrics (EER, minDCF for SV; Top-1 accuracy for SID)
-- [ ] Experimental results table
+- [x] Dataset description: VIVOS Vietnamese corpus, CC BY-NC-SA 4.0
+- [x] Train / validation / test split: 41 / 5 / 19 speaker-disjoint speakers
+- [x] Model architecture: 192-dimensional SpeechBrain ECAPA-TDNN
+- [x] Training procedure: Colab Tesla T4, 20 epochs, AdamW, AAM-Softmax
+- [x] Evaluation: 10,000 balanced trials, EER, minDCF, and SID Top-1
+- [x] Experimental results: baseline EER 4.40%; final VIVOS EER 1.28%
 
 ### Requirement 2 - Virtual Assistant Integration
-- [ ] Enrollment procedure (phrase collection, embedding storage)
-- [ ] Overall system architecture diagram
-- [ ] Processing flow diagram (ASR -> Intent -> SV/SID -> Execute -> TTS)
-- [ ] Demo of general function (no auth)
-- [ ] Demo of SV-protected function
-- [ ] Demo of SID-personalized function
+- [x] Enrollment procedure: five recorded phrases; per-phrase embeddings plus an average profile
+- [x] Overall system architecture and processing flow
+- [x] On-device Vietnamese Android TTS design
+- [ ] Recorded demonstration of a general voice function; current general intents return guidance text but do not yet execute the underlying data action
+- [ ] Recorded demonstration of SV-protected medication marking using a real enrollment
+- [ ] Multi-user SID personalization flow; 1-to-N matching exists in the AI service, but it is not yet connected to an app feature that personalizes across multiple registered users
+
+The evidence-backed narrative and metric table are in
+`FINAL_PROJECT_REPORT.md`. The remaining implementation, demo, and submission
+work is tracked in `REPORT_READINESS.md`.
 
 ---
 
@@ -449,16 +451,16 @@ direction (IN/OUT), started_at, duration_seconds
 
 | # | Topic | Decision |
 |---|-------|----------|
-| 1 | Voice dataset | Pretrain on **VoxCeleb2** (SpeechBrain checkpoint); fine-tune + evaluate on **VoxVietnam** or **Vietnam-Celeb** |
+| 1 | Voice dataset | SpeechBrain VoxCeleb checkpoint; fine-tune + evaluate on **VIVOS** (completed) |
 | 2 | Caregiver-Elder linking | Caregiver sets up **directly on the elder's device** |
 | 3 | Real calls | **Real Zalo / Android phone deeplinks** |
-| 4 | LLM provider | **OpenAI GPT-4o** (function-calling) |
-| 5 | Voice invocation | **Both**: wake-word "Hey Dearly" + in-app tap button |
+| 4 | LLM provider | OpenAI `gpt-4o-mini` with deterministic local fallback |
+| 5 | Voice invocation | In-app tap-to-record button; wake-word remains future work |
 | 6 | Multi-elder | Yes — **multiple elder accounts** switchable on one caregiver phone |
 | 7 | Deadline | **Friday, 28 August 2026** |
 | 8 | SV threshold | **≥ 0.80** (lenient, tuned for elderly voice variability) |
 | 9 | Backend hosting | **Localhost** for demo |
-| 10 | AI microservice | **Separate Docker container** (GPU-capable, communicates with Go server via REST/gRPC) |
+| 10 | AI microservice | Separate Docker container using CPU inference locally; training ran on a Colab T4 |
 | 11 | Medication snooze | **From notification shade** — Android action buttons ("Taken" / "Snooze 10 min") |
 | 12 | Health status logic | **Both**: caregiver override + auto-derived from missed doses (≥2 = Warning, ≥5 = Critical) |
 
@@ -487,7 +489,7 @@ direction (IN/OUT), started_at, duration_seconds
 
 - All services run via **docker-compose** on the demo laptop
 - Android device connects over **USB ADB reverse tunnel** or same WiFi
-- Python AI container has GPU passthrough (`--gpus all`) for ECAPA-TDNN inference
+- Python AI container uses CPU inference locally; GPU is required for the remote training workflow only
 - Go API container communicates with Python AI via internal Docker network (`ai-service:5000`)
 
 ---
