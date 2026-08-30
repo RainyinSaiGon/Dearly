@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dearly/backend/pkg/appclock"
 	"github.com/dearly/backend/pkg/events"
 )
 
@@ -52,17 +53,51 @@ type enrolledSpeaker struct {
 	Embedding []float32 `json:"embedding"`
 }
 
+const enrolledSpeakersQuery = `
+	WITH recognition_group AS (
+		SELECT $1::uuid AS user_id
+		UNION
+		SELECT elder_id FROM caregiver_elder_links WHERE caregiver_id=$1
+		UNION
+		SELECT caregiver_id FROM caregiver_elder_links WHERE elder_id=$1
+	)
+	SELECT user_id::text, embedding_vector
+	FROM voice_enrollments
+	WHERE phrase_index=-1
+	  AND user_id IN (SELECT user_id FROM recognition_group)`
+
+const recognizedSpeakerNameQuery = `
+	WITH recognition_group AS (
+		SELECT $2::uuid AS user_id
+		UNION
+		SELECT elder_id FROM caregiver_elder_links WHERE caregiver_id=$2
+		UNION
+		SELECT caregiver_id FROM caregiver_elder_links WHERE elder_id=$2
+	)
+	SELECT name
+	FROM users
+	WHERE id=$1
+	  AND id IN (SELECT user_id FROM recognition_group)`
+
+type scheduledMedication struct {
+	name  string
+	slots []string
+}
+
 type Service struct {
 	db           *sql.DB
 	aiServiceURL string
 	httpClient   *http.Client
 	events       events.Publisher
+	location     *time.Location
 }
 
 func NewService(db *sql.DB, aiServiceURL string, publisher events.Publisher) *Service {
 	return &Service{
 		db: db, aiServiceURL: strings.TrimRight(aiServiceURL, "/"),
-		httpClient: &http.Client{Timeout: 90 * time.Second}, events: publisher,
+		httpClient: &http.Client{Timeout: 90 * time.Second},
+		events:     publisher,
+		location:   appclock.LocationFromEnv(),
 	}
 }
 
@@ -208,6 +243,9 @@ func (s *Service) Query(ctx context.Context, userID, filename string, audioBytes
 	if err := json.Unmarshal(response, &result); err != nil {
 		return nil, err
 	}
+	if err := s.enrichQueryResponse(ctx, userID, result); err != nil {
+		return nil, err
+	}
 	_ = s.events.Publish(ctx, "voice.query.completed", userID, map[string]any{
 		"intent": result["intent"], "sv_required": result["sv_required"], "sv_passed": result["sv_passed"],
 	})
@@ -250,9 +288,7 @@ func (s *Service) issueVerificationGrant(ctx context.Context, userID, intent str
 }
 
 func (s *Service) enrolledSpeakers(ctx context.Context, userID string) ([]enrolledSpeaker, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT user_id::text, embedding_vector
-		FROM voice_enrollments WHERE phrase_index=-1 AND user_id=$1`, userID)
+	rows, err := s.db.QueryContext(ctx, enrolledSpeakersQuery, userID)
 	if err != nil {
 		return nil, fmt.Errorf("load enrolled speakers: %w", err)
 	}
@@ -271,6 +307,97 @@ func (s *Service) enrolledSpeakers(ctx context.Context, userID string) ([]enroll
 		speakers = append(speakers, enrolledSpeaker{UserID: userID, Embedding: embedding})
 	}
 	return speakers, rows.Err()
+}
+
+func (s *Service) enrichQueryResponse(ctx context.Context, userID string, result map[string]interface{}) error {
+	intent, _ := result["intent"].(string)
+	switch normalizeIntent(intent) {
+	case "ASK_TIME":
+		result["response_text"] = vietnameseTimeResponse(time.Now().In(s.location))
+	case "ASK_DATE":
+		result["response_text"] = vietnameseDateResponse(time.Now().In(s.location))
+	case "CHECK_MEDICATIONS":
+		response, err := s.medicationScheduleResponse(ctx, userID)
+		if err != nil {
+			return err
+		}
+		result["response_text"] = response
+	}
+
+	identifiedUserID, _ := result["identified_user_id"].(string)
+	if identifiedUserID == "" {
+		return nil
+	}
+	var name string
+	if err := s.db.QueryRowContext(ctx, recognizedSpeakerNameQuery, identifiedUserID, userID).Scan(&name); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return fmt.Errorf("load identified speaker: %w", err)
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil
+	}
+	result["recognized_user_name"] = name
+	if response, ok := result["response_text"].(string); ok && strings.TrimSpace(response) != "" {
+		result["response_text"] = fmt.Sprintf("Chào %s. %s", name, response)
+	}
+	return nil
+}
+
+func (s *Service) medicationScheduleResponse(ctx context.Context, elderID string) (string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT name, time_slots
+		FROM medications
+		WHERE elder_id=$1
+		ORDER BY name`, elderID)
+	if err != nil {
+		return "", fmt.Errorf("load medication schedule: %w", err)
+	}
+	defer rows.Close()
+
+	medications := make([]scheduledMedication, 0)
+	for rows.Next() {
+		var name string
+		var slotsJSON []byte
+		if err := rows.Scan(&name, &slotsJSON); err != nil {
+			return "", err
+		}
+		var slots []string
+		if err := json.Unmarshal(slotsJSON, &slots); err != nil {
+			return "", fmt.Errorf("decode medication schedule: %w", err)
+		}
+		medications = append(medications, scheduledMedication{name: name, slots: slots})
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	return vietnameseMedicationScheduleResponse(medications), nil
+}
+
+func vietnameseMedicationScheduleResponse(medications []scheduledMedication) string {
+	if len(medications) == 0 {
+		return "Hôm nay bác chưa có thuốc nào được cài đặt."
+	}
+	items := make([]string, 0, len(medications))
+	for _, medication := range medications {
+		if len(medication.slots) == 0 {
+			items = append(items, medication.name)
+			continue
+		}
+		items = append(items, fmt.Sprintf("%s lúc %s", medication.name, strings.Join(medication.slots, ", ")))
+	}
+	return "Lịch thuốc hôm nay của bác: " + strings.Join(items, "; ") + "."
+}
+
+func vietnameseTimeResponse(now time.Time) string {
+	return fmt.Sprintf("Bây giờ là %d giờ %02d phút.", now.Hour(), now.Minute())
+}
+
+func vietnameseDateResponse(now time.Time) string {
+	weekdays := [...]string{"Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"}
+	return fmt.Sprintf("Hôm nay là %s, ngày %d tháng %d năm %d.", weekdays[now.Weekday()], now.Day(), now.Month(), now.Year())
 }
 
 func normalizeIntent(intent string) string {

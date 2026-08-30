@@ -14,30 +14,28 @@
 | Evaluation | Complete | 10,000 balanced held-out trials: final EER 1.28%, minDCF 0.001628, SID Top-1 100%. |
 | Model integration | Complete | `models/ecapa_dearly.ckpt` loads through the production runtime and returns a finite 192-element embedding. |
 | Voice interaction and enrollment | Code complete | Android recorder; five phrase embeddings and an average profile are stored by the backend. |
+| General voice actions | Code complete | `ASK_TIME` and `ASK_DATE` return the configured local time/date; `CHECK_MEDICATIONS` reads the authenticated elder's stored schedule. |
 | Important protected function | Code complete | Medication marking requires an intent-bound, two-minute, one-use SV grant. |
+| SID personalization | Code complete | The query compares the caller plus directly linked caregiver/elder enrollment profiles, then returns the matched person's name in the spoken response. |
 | Vietnamese TTS | Code complete | Android uses local `vi-VN` TextToSpeech; no Cloud TTS account or key is required. |
 
 ## Still required before a defensible final submission
 
-### 1. Implement and demonstrate a true general voice action
+### 1. Record a true general voice-action demonstration
 
-**Gap:** `ASK_TIME`, `ASK_DATE`, and `CHECK_MEDICATIONS` are classified, but
-the response currently says that Dearly will perform the task rather than
-actually reading live time/date or the user's medication data.
+**Implemented:** `ASK_TIME` and `ASK_DATE` read the configured local clock;
+`CHECK_MEDICATIONS` reads the stored medication schedule. The query route is
+covered by focused backend tests and has been rebuilt into the Docker API.
 
-**Required work:** connect at least one general intent to a real read-only
-backend action, then record it in the demo.
+**Required work:** record at least one of those read-only actions in the demo.
 
-### 2. Implement and demonstrate multi-user SID personalization
+### 2. Record multi-user SID personalization
 
-**Gap:** the ECAPA runtime can perform 1-to-N identification, but the backend
-currently passes only the current authenticated user's profile into `/query/`.
-Therefore the app does not yet identify among several registered users or alter
-the response based on the matched user.
+**Implemented:** the backend sends profiles only from the caller's trusted
+caregiver/elder relationship group to `/query/`, resolves the recognized user,
+and prefixes the spoken response with that person's name.
 
-**Required work:** retrieve a permitted set of multiple enrollment profiles,
-map the SID result to a user-specific response or settings, and record a demo
-with at least two enrolled speakers.
+**Required work:** record a demo with at least two enrolled, linked speakers.
 
 ### 3. Record the required real-device demo evidence
 
@@ -47,12 +45,11 @@ must be recorded on an Android device/emulator with a Vietnamese voice installed
 1. Open Android Text-to-speech settings and show a selected/downloaded `vi-VN`
    voice.
 2. Enroll five voice phrases and show the completion state.
-3. Demonstrate one general function after its real data action is wired.
+3. Demonstrate a general function (time, date, or medication schedule).
 4. Demonstrate medication marking: request -> second verification phrase ->
    successful action.
 5. Demonstrate a failed verification attempt with a different speaker.
-6. Demonstrate SID personalization with two enrolled users after item 2 is
-   implemented.
+6. Demonstrate SID personalization with two enrolled, linked users.
 
 Capture screenshots or a short video and reference the figures in the final
 report. Do not claim this as tested until the real recordings exist.

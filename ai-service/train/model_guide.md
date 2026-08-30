@@ -116,6 +116,7 @@ the Android client reads the AI response text aloud locally with `vi-VN`.
 - [x] Model, 192-dimensional embedding, and training protocol
 - [x] Baseline, smoke, and final metrics with a held-out test set
 - [x] Runtime checkpoint and finite-embedding validation
+- [x] Multi-user SID personalization implementation: linked caregiver/elder profiles are matched by the backend and the recognized name is returned to the app
 - [ ] Multi-user SID personalization demonstration in the application
 - [ ] Real-device Vietnamese TTS demonstration and screenshots
 - [ ] Final report screenshots, archive, and Drive-link text file

@@ -20,9 +20,9 @@ Vietnamese speech output on devices with a `vi-VN` voice installed.
 
 | Category | Example | Required control | Current implementation status |
 |---|---|---|---|
-| General | Greeting, asking the time/date, checking medication schedule | No SV | Intent classification and Vietnamese guidance response are implemented; the data-action adapter for voice-triggered schedule lookup is still pending. |
+| General | Greeting, asking the time/date, checking medication schedule | No SV | `ASK_TIME`/`ASK_DATE` return the configured local clock and `CHECK_MEDICATIONS` reads the stored schedule. |
 | Important | Mark a medication dose as taken | SV before mutation | Implemented: verification issues a short-lived, one-use grant consumed by the medication endpoint. |
-| Personalized | Identify a registered speaker and personalize information | SID | ECAPA 1-to-N matching and its evaluation are implemented; a multi-user app personalization flow remains pending. |
+| Personalized | Identify a registered speaker and personalize information | SID | The backend performs 1-to-N matching over the caller's directly linked caregiver/elder group and returns a response personalized with the recognized name. |
 
 The separation is deliberate: an initial voice query can classify a protected
 request but cannot authorize an action. The user records a second verification
@@ -133,15 +133,11 @@ settings before the live demo.
 
 This report does not claim unfinished behavior as completed.
 
-1. The current general voice intents provide safe guidance text but do not yet
-   execute the related time/date/medication lookup in the voice-query flow.
-2. The AI service has a tested 1-to-N SID primitive, but the backend currently
-   submits only the current user's enrollment profile to the query route. A
-   multi-user personalization feature must be wired and demonstrated.
-3. A full physical-device demonstration is still required for microphone,
+1. A full physical-device demonstration is still required for microphone,
    Vietnamese TTS playback, Firebase authentication, real enrollment, SV, and
-   protected medication marking.
-4. The current measurements are VIVOS test-set metrics, not a calibration study
+   protected medication marking, including a general voice action and a
+   two-user SID personalization flow.
+2. The current measurements are VIVOS test-set metrics, not a calibration study
    on the elderly target population.
 
 ## 8. Submission materials

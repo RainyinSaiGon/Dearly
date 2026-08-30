@@ -437,9 +437,11 @@ direction (IN/OUT), started_at, duration_seconds
 - [x] Enrollment procedure: five recorded phrases; per-phrase embeddings plus an average profile
 - [x] Overall system architecture and processing flow
 - [x] On-device Vietnamese Android TTS design
-- [ ] Recorded demonstration of a general voice function; current general intents return guidance text but do not yet execute the underlying data action
+- [x] General voice action implementation: live time/date and stored medication-schedule responses
+- [ ] Recorded demonstration of a general voice function
 - [ ] Recorded demonstration of SV-protected medication marking using a real enrollment
-- [ ] Multi-user SID personalization flow; 1-to-N matching exists in the AI service, but it is not yet connected to an app feature that personalizes across multiple registered users
+- [x] Multi-user SID personalization flow: matching is restricted to the caller's linked caregiver/elder group and returns the recognized name
+- [ ] Recorded multi-user SID personalization demonstration with two enrolled, linked users
 
 The evidence-backed narrative and metric table are in
 `FINAL_PROJECT_REPORT.md`. The remaining implementation, demo, and submission

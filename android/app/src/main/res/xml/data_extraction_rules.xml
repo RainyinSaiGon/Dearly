@@ -2,9 +2,10 @@
 <data-extraction-rules>
     <cloud-backup>
         <include domain="sharedpref" path="."/>
-        <exclude domain="sharedpref" path="encrypted_prefs.xml"/>
+        <exclude domain="sharedpref" path="dearly_session.xml"/>
     </cloud-backup>
     <device-transfer>
         <include domain="sharedpref" path="."/>
+        <exclude domain="sharedpref" path="dearly_session.xml"/>
     </device-transfer>
 </data-extraction-rules>

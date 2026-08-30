@@ -3,7 +3,9 @@ package voice
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestVerifyRejectsUnprotectedIntentBeforeReadingEnrollment(t *testing.T) {
@@ -25,5 +27,49 @@ func TestGrantHashAndIntentNormalization(t *testing.T) {
 	}
 	if hashGrant("grant") == hashGrant("different") {
 		t.Fatal("different grants must not share a hash")
+	}
+}
+
+func TestGeneralVoiceResponsesContainLiveValues(t *testing.T) {
+	at := time.Date(2026, time.August, 30, 9, 5, 0, 0, time.UTC)
+
+	if got, want := vietnameseTimeResponse(at), "Bây giờ là 9 giờ 05 phút."; got != want {
+		t.Fatalf("unexpected time response: got %q, want %q", got, want)
+	}
+	if got, want := vietnameseDateResponse(at), "Hôm nay là Chủ nhật, ngày 30 tháng 8 năm 2026."; got != want {
+		t.Fatalf("unexpected date response: got %q, want %q", got, want)
+	}
+}
+
+func TestMedicationScheduleResponseUsesStoredSchedule(t *testing.T) {
+	if got, want := vietnameseMedicationScheduleResponse(nil), "Hôm nay bác chưa có thuốc nào được cài đặt."; got != want {
+		t.Fatalf("unexpected empty schedule response: got %q, want %q", got, want)
+	}
+
+	got := vietnameseMedicationScheduleResponse([]scheduledMedication{
+		{name: "Vitamin D", slots: []string{"08:00", "20:00"}},
+		{name: "Paracetamol"},
+	})
+	want := "Lịch thuốc hôm nay của bác: Vitamin D lúc 08:00, 20:00; Paracetamol."
+	if got != want {
+		t.Fatalf("unexpected schedule response: got %q, want %q", got, want)
+	}
+}
+
+func TestEnrolledSpeakerQueryLimitsRecognitionToTrustedLinks(t *testing.T) {
+	for _, query := range []string{enrolledSpeakersQuery, recognizedSpeakerNameQuery} {
+		for _, clause := range []string{
+			"WITH recognition_group AS",
+			"SELECT elder_id FROM caregiver_elder_links WHERE caregiver_id=$",
+			"SELECT caregiver_id FROM caregiver_elder_links WHERE elder_id=$",
+			"id IN (SELECT user_id FROM recognition_group)",
+		} {
+			if !strings.Contains(query, clause) {
+				t.Fatalf("recognition query is missing %q", clause)
+			}
+		}
+	}
+	if !strings.Contains(enrolledSpeakersQuery, "phrase_index=-1") {
+		t.Fatal("speaker lookup must use only average enrollment profiles")
 	}
 }

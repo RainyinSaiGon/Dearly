@@ -107,5 +107,6 @@ data class VoiceQueryDto(
     @SerializedName("response_text") val responseText: String,
     @SerializedName("sv_required") val svRequired: Boolean,
     @SerializedName("sv_passed") val svPassed: Boolean?,
-    @SerializedName("identified_user_id") val identifiedUserId: String?
+    @SerializedName("identified_user_id") val identifiedUserId: String?,
+    @SerializedName("recognized_user_name") val recognizedUserName: String?
 )

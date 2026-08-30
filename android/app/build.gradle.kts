@@ -4,7 +4,9 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
-    id("com.google.dagger.hilt.andro
+    id("com.google.dagger.hilt.android")
+}
+
 val googleServicesConfig = layout.projectDirectory.file("google-services.json").asFile
 
 if (googleServicesConfig.isFile) {
