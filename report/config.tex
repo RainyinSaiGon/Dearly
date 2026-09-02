@@ -1,0 +1,56 @@
+% ================= COLOR DEFINITIONS =================
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+% ================= LISTINGS STYLE =================
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
+    showspaces=false,
+    showstringspaces=false,
+    tabsize=2
+}
+\lstset{style=mystyle}
+
+% ================= TCOLORBOX STYLES =================
+\tcbset{
+    myinputbox/.style={
+        colback=blue!10,
+        colframe=blue!50!black,
+        coltitle=white,
+        title=Input,
+        fonttitle=\bfseries,
+        sharp corners=south,
+        boxrule=0.8mm,
+        arc=2mm,
+        top=1mm,
+        bottom=1mm,
+        left=1mm,
+        right=1mm
+    },
+    myoutputbox/.style={
+        colback=green!10,
+        colframe=green!50!black,
+        coltitle=white,
+        title=Output,
+        fonttitle=\bfseries,
+        sharp corners=south,
+        boxrule=0.8mm,
+        arc=2mm,
+        top=1mm,
+        bottom=1mm,
+        left=1mm,
+        right=1mm
+    }
+}

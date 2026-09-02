@@ -1,0 +1,65 @@
+% Diagram styles used only by the architecture figure in this chapter.
+\definecolor{dearlygreen}{HTML}{174D3B}
+\definecolor{dearlymint}{HTML}{E9F7F0}
+\tikzset{
+    service/.style={draw=dearlygreen, thick, rounded corners=3pt, fill=dearlymint,
+        align=center, text width=2.55cm, minimum height=1.0cm, font=\small},
+    datastore/.style={draw=black!65, thick, cylinder, shape border rotate=90,
+        aspect=0.28, align=center, minimum width=2.2cm, minimum height=1.1cm, font=\small},
+    flow/.style={-{Latex[length=2.4mm]}, thick, black!75}
+}
+
+\section{Introduction and System Overview}
+
+\subsection{Project Context and Objectives}
+Older adults benefit from hands-free access to time, medication information, and caregiver-supported routines. At the same time, commands that change health-related state must resist accidental or unauthorized execution. Dearly addresses this tension with the following objectives:
+\begin{itemize}
+    \item provide voice-based interaction in Vietnamese through an accessible Android interface;
+    \item execute a general information request without speaker authentication;
+    \item require successful SV before a medication dose is marked as taken; and
+    \item use SID only for personalization, limited to a caller's trusted caregiver--elder group.
+\end{itemize}
+
+\subsection{Required Assistant Use Cases}
+Table~\ref{tab:use-cases} maps the required project behaviors to the implemented assistant functions. The first query is intentionally informational: it may detect that a protected action was requested, but it cannot mutate medication data. A second recording is required for SV before the protected endpoint accepts the action.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.2cm}X>{\raggedright\arraybackslash}p{3.2cm}}
+\toprule
+\textbf{Category} & \textbf{Example function} & \textbf{Control} \\
+\midrule
+General & Ask for the current time/date or medication schedule. & No SV; response uses local time or stored schedule. \\
+\addlinespace[3pt]
+Important & Mark a medication dose as taken. & One-to-one SV and a short-lived, one-use voice grant. \\
+\addlinespace[3pt]
+Personalized & Return a response addressed to a recognized linked family member. & One-to-many SID over only the caller and directly linked caregiver/elder profiles. \\
+\bottomrule
+\end{tabularx}
+\caption{Dearly voice-assistant use cases and security controls.}
+\label{tab:use-cases}
+\end{table}
+
+\subsection{\hspace{0.15em}System Architecture}
+Figure~\ref{fig:architecture} shows the production design. Android is the only public client. It records audio, sends it to the Go API, displays the response, and uses Android's local \texttt{vi-VN} TextToSpeech engine for output. The Go API authenticates sessions, manages enrollment and medication state, and calls the private FastAPI service. The AI service runs ASR, ECAPA embedding extraction, SID, SV, and constrained LLM/local intent analysis. PostgreSQL is authoritative for user, relationship, medication, enrollment, and grant data; Kafka delivers domain events to the notification worker.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1.1cm and 0.55cm]
+\node[service] (android) {Android application\\Voice capture and local TTS};
+\node[service, right=of android] (api) {Go API\\Authentication and authorization};
+\node[service, right=of api] (ai) {FastAPI AI service\\Whisper, ECAPA, intent routing};
+\node[datastore, below=of api] (postgres) {PostgreSQL};
+\node[service, below=of android] (kafka) {Kafka and notification worker};
+\draw[flow] (android) -- (api);
+\draw[flow] (api) -- (ai);
+\draw[flow] (ai.south west) to[out=-115,in=-20] (api.south east);
+\draw[flow] (api) -- (postgres);
+\draw[flow] (api.south west) -- (kafka.north east);
+\end{tikzpicture}
+\caption{Dearly service architecture. The Android app does not call the database, Kafka, or AI service directly.}
+\label{fig:architecture}
+\end{figure}
+
+\subsection{Voice-Request Processing Flow}
+For a normal query, the AI service transcribes the recording with Whisper, identifies a speaker when trusted profiles are supplied, and classifies the request. The API enriches allowed general intents such as \texttt{ASK\_TIME}, \texttt{ASK\_DATE}, and \texttt{CHECK\_MEDICATIONS} from local time or PostgreSQL. A protected intent returns a response requesting verification instead of performing the action. This separation ensures that ASR and intent classification do not become authorization decisions.

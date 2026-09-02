@@ -1,0 +1,48 @@
+\section{Dataset Preparation and Model Training}
+
+\subsection{VIVOS Dataset and Speaker-Disjoint Splits}
+The speaker-recognition experiment uses VIVOS, a Vietnamese speech corpus released for academic use under the CC BY-NC-SA 4.0 license \cite{vivos}. VIVOS is appropriate for this project because the final assistant operates in Vietnamese. The completed run places every speaker in exactly one partition, avoiding identity leakage between training, checkpoint selection, and final evaluation.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{lrrX}
+\toprule
+\textbf{Split} & \textbf{Speakers} & \textbf{Utterances} & \textbf{Purpose} \\
+\midrule
+Training & 41 & 10,310 & Fine-tune the ECAPA embedding model and AAM-Softmax head. \\
+Validation & 5 & 1,350 & Select the checkpoint with the best verification validation loss. \\
+Test & 19 & 760 & Hold-out speaker-verification and speaker-identification evaluation only. \\
+\bottomrule
+\end{tabularx}
+\caption{Speaker-disjoint VIVOS split used by the completed experiment.}
+\label{tab:vivos-split}
+\end{table}
+
+\subsection{Audio Preprocessing and Speaker Enrollment}
+The training pipeline builds manifests containing utterance identifiers, absolute audio paths, speaker identifiers, and durations. At load time, recordings are converted to mono, resampled to 16~kHz when necessary, and transformed into fixed three-second examples. Training crops use a random start point; validation uses a deterministic center crop. Short recordings are zero-padded. This makes batches comparable while preserving the original speaker-disjoint assignment.
+
+The Android enrollment workflow requests five prompted phrases. Each phrase produces a 192-dimensional ECAPA embedding. The backend stores the individual embeddings as serialized \texttt{float32} vectors and derives an average profile for verification. The workflow does not persist raw enrollment audio after the embedding is obtained. The five phrase records also provide the profile material used in the held-out SID protocol.
+
+\subsection{ECAPA-TDNN Model and Training Procedure}
+ECAPA-TDNN extends TDNN-based speaker representation learning with channel attention, multi-layer feature aggregation, and attentive statistics pooling \cite{ecapa}. Dearly starts from the SpeechBrain pretrained \texttt{speechbrain/spkrec-ecapa-voxceleb} source and fine-tunes the embedding model on VIVOS \cite{speechbrain}. The deployed runtime produces a finite 192-dimensional embedding, compares profiles by cosine similarity, and applies separate configurable SV and SID thresholds.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+\textbf{Setting} & \textbf{Completed experiment value} \\
+\midrule
+Compute environment & Google Colab Tesla T4 GPU \\
+Final training duration & 20 epochs, initialized from the original pretrained source \\
+Batch size and audio input & 32 examples; three-second mono 16~kHz crops \\
+Objective & AAM-Softmax, margin 0.2 and scale 30 \\
+Optimizer and schedule & AdamW; cosine learning-rate decay from $10^{-4}$ to $10^{-6}$ \\
+Backbone schedule & Frozen in epochs 1--5 and unfrozen in epochs 6--20 \\
+Checkpoint selection & Minimum validation loss: 0.2644617259502411 \\
+\bottomrule
+\end{tabularx}
+\caption{Fine-tuning configuration for the VIVOS ECAPA-TDNN experiment.}
+\label{tab:training-config}
+\end{table}
+
+The experimental sequence first evaluated the untouched VoxCeleb-pretrained baseline, then ran a one-epoch smoke experiment, and finally ran the independent 20-epoch training procedure. The final checkpoint is loaded by the production ECAPA wrapper rather than by a separate evaluation-only implementation. This checks that the artifact evaluated for the report can generate the same type of runtime embedding used for SV and SID.

@@ -1,0 +1,31 @@
+\begin{thebibliography}{1}
+
+\bibitem{ecapa}
+Brecht Desplanques, Jenthe Thienpondt, and Kris Demuynck.
+\newblock Ecapa-tdnn: Emphasized channel attention, propagation and aggregation
+  in tdnn based speaker verification.
+\newblock In {\em Proceedings of Interspeech 2020}, pages 3830--3834, 2020.
+
+\bibitem{speechbrain}
+Mirco Ravanelli, Titouan Parcollet, Peter Plantinga, et~al.
+\newblock Speechbrain: A general-purpose speech toolkit.
+\newblock {\em arXiv preprint arXiv:2106.04624}, 2021.
+
+\bibitem{whisper}
+Alec Radford, Jong~Wook Kim, Tao Xu, et~al.
+\newblock Robust speech recognition via large-scale weak supervision.
+\newblock {\em arXiv preprint arXiv:2212.04356}, 2022.
+
+\bibitem{vivos}
+Hieu-Thi Luong and Hai-Quan Vu.
+\newblock A non-expert kaldi recipe for vietnamese speech recognition system.
+\newblock In {\em Proceedings of the 4th Workshop on Linked Data in
+  Linguistics}, 2016.
+\newblock VIVOS Vietnamese Speech Corpus, CC BY-NC-SA 4.0.
+
+\bibitem{openai}
+{OpenAI}.
+\newblock Gpt-4o system card, 2024.
+\newblock Accessed September 2026.
+
+\end{thebibliography}

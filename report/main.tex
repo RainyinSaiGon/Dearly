@@ -1,0 +1,104 @@
+% % \DocumentMetadata{testphase={phase-III,math,table}}
+\documentclass[12pt]{article}
+\input{preamble}
+\input{config}
+
+
+\begin{document}
+% Keep the template border anchored to the first physical page.  Placing this
+% overlay after the longer project details can make TeX ship it onto page two.
+\begin{tikzpicture}[remember picture,overlay,inner sep=0,outer sep=0]
+     \draw[blue!70!black,line width=4pt] ([xshift=-1.5cm,yshift=-2cm]current page.north east) coordinate (A)--([xshift=1.5cm,yshift=-2cm]current page.north west) coordinate(B)--([xshift=1.5cm,yshift=2cm]current page.south west) coordinate (C)--([xshift=-1.5cm,yshift=2cm]current page.south east) coordinate(D)--cycle;
+
+     \draw ([yshift=0.5cm,xshift=-0.5cm]A)-- ([yshift=0.5cm,xshift=0.5cm]B)--
+     ([yshift=-0.5cm,xshift=0.5cm]B) --([yshift=-0.5cm,xshift=-0.5cm]B)--([yshift=0.5cm,xshift=-0.5cm]C)--([yshift=0.5cm,xshift=0.5cm]C)--([yshift=-0.5cm,xshift=0.5cm]C)-- ([yshift=-0.5cm,xshift=-0.5cm]D)--([yshift=0.5cm,xshift=-0.5cm]D)--([yshift=0.5cm,xshift=0.5cm]D)--([yshift=-0.5cm,xshift=0.5cm]A)--([yshift=-0.5cm,xshift=-0.5cm]A)--([yshift=0.5cm,xshift=-0.5cm]A);
+
+
+     \draw ([yshift=-0.3cm,xshift=0.3cm]A)-- ([yshift=-0.3cm,xshift=-0.3cm]B)--
+     ([yshift=0.3cm,xshift=-0.3cm]B) --([yshift=0.3cm,xshift=0.3cm]B)--([yshift=-0.3cm,xshift=0.3cm]C)--([yshift=-0.3cm,xshift=-0.3cm]C)--([yshift=0.3cm,xshift=-0.3cm]C)-- ([yshift=0.3cm,xshift=0.3cm]D)--([yshift=-0.3cm,xshift=0.3cm]D)--([yshift=-0.3cm,xshift=-0.3cm]D)--([yshift=0.3cm,xshift=0.3cm]A)--([yshift=0.3cm,xshift=0.3cm]A)--([yshift=-0.3cm,xshift=0.3cm]A);
+\end{tikzpicture}
+
+\begin{center}
+    \color{BlueViolet}
+
+     \textbf{\newline\newline}
+    \vspace{6pt}
+    \large
+    \textbf{\\HO CHI MINH UNIVERSITY OF SCIENCE}
+    
+
+    
+    \vspace{6pt}
+    \large
+    \textbf{\\FACULTY OF INFORMATION TECHNOLOGY}
+
+    \vspace{6pt}
+    \large
+    \textbf{\\STATISTICAL LEARNING}
+   
+\end{center}
+
+\begin{center}
+    \includegraphics[scale=0.25,alt={Logo of HCMUS}]{images/Logo_HCMUS.png}
+    \color{BlueViolet}
+    
+   \large
+   \textbf{FINAL PROJECT REPORT}
+   \vspace{12pt}\\
+
+    \color{Black}
+    \large
+    \textbf{Dearly: Secure Virtual Assistant for Elderly Care}\\
+    \textbf{with Speaker Verification and Identification}
+    \vspace{25pt}\\
+
+    \color{BlueViolet}
+    \textbf{LECTURER:}
+    \color{Black}
+    \\ Lê Long Quốc
+    \vspace{25pt}\\
+
+
+
+    \color{BlueViolet}
+    \textbf{STUDENTS:}
+    \color{Black}
+    \\ {Lê Nguyên Thảo - 23127118}
+    \\ {Đinh Đại Vũ - 23127144}
+    \vspace{25pt}\\
+
+\end{center}
+
+\newpage
+\input{content/Abstract}
+
+\newpage
+\renewcommand{\contentsname}{\textbf{Contents}}
+
+\tableofcontents
+
+\newpage
+\listoffigures
+\listoftables
+
+\newpage
+\input{content/0_Member}
+
+\newpage
+\input{content/1_Introduction to the Analytical Problem}
+
+\newpage
+\input{content/2_Data Collection, Construction, and Preprocessing}
+
+\newpage
+\input{content/3_Data Analysis}
+
+
+\FloatBarrier
+
+\newpage
+\input{content/References}
+
+
+
+\end{document}
