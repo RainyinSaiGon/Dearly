@@ -4,15 +4,18 @@
 \contentsline {section}{\numberline {1}Introduction and System Overview}{6}{section.1}%
 \contentsline {subsection}{\numberline {1.1}Project Context and Objectives}{6}{subsection.1.1}%
 \contentsline {subsection}{\numberline {1.2}Required Assistant Use Cases}{6}{subsection.1.2}%
-\contentsline {subsection}{\numberline {1.3}\hspace {0.15em}System Architecture}{6}{subsection.1.3}%
-\contentsline {subsection}{\numberline {1.4}Voice-Request Processing Flow}{7}{subsection.1.4}%
-\contentsline {section}{\numberline {2}Dataset Preparation and Model Training}{8}{section.2}%
-\contentsline {subsection}{\numberline {2.1}VIVOS Dataset and Speaker-Disjoint Splits}{8}{subsection.2.1}%
-\contentsline {subsection}{\numberline {2.2}Audio Preprocessing and Speaker Enrollment}{8}{subsection.2.2}%
-\contentsline {subsection}{\numberline {2.3}ECAPA-TDNN Model and Training Procedure}{8}{subsection.2.3}%
-\contentsline {section}{\numberline {3}Experimental Results and System Integration}{10}{section.3}%
-\contentsline {subsection}{\numberline {3.1}Evaluation Protocol and Experimental Results}{10}{subsection.3.1}%
-\contentsline {subsection}{\numberline {3.2}Speaker Enrollment, Verification, and Identification Integration}{10}{subsection.3.2}%
-\contentsline {subsection}{\numberline {3.3}Implementation Validation and Demonstration Evidence}{11}{subsection.3.3}%
-\contentsline {subsection}{\numberline {3.4}Limitations and Conclusion}{12}{subsection.3.4}%
-\contentsline {section}{References}{13}{section*.13}%
+\contentsline {subsection}{\numberline {1.3}\hspace {0.15em}System Architecture}{7}{subsection.1.3}%
+\contentsline {subsection}{\numberline {1.4}Voice-Request Processing Flow}{8}{subsection.1.4}%
+\contentsline {section}{\numberline {2}Dataset Preparation and Model Training}{9}{section.2}%
+\contentsline {subsection}{\numberline {2.1}VIVOS Dataset and Speaker-Disjoint Splits}{9}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Audio Preprocessing and Speaker Enrollment}{9}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}ECAPA-TDNN Model and Training Procedure}{9}{subsection.2.3}%
+\contentsline {section}{\numberline {3}Experimental Results and System Integration}{11}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Evaluation Protocol and Experimental Results}{11}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Speaker Enrollment, Verification, and Identification Integration}{11}{subsection.3.2}%
+\contentsline {subsubsection}{\numberline {3.2.1}Enrollment procedure and stored voice data}{11}{subsubsection.3.2.1}%
+\contentsline {subsubsection}{\numberline {3.2.2}Verification and identification at runtime}{12}{subsubsection.3.2.2}%
+\contentsline {subsection}{\numberline {3.3}Implementation Validation and Demonstration Evidence}{13}{subsection.3.3}%
+\contentsline {paragraph}{SID personalization beyond the name.}{13}{paragraph*.10}%
+\contentsline {subsection}{\numberline {3.4}Limitations and Conclusion}{15}{subsection.3.4}%
+\contentsline {section}{References}{16}{section*.15}%

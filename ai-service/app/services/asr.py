@@ -11,6 +11,10 @@ class ASRUnavailableError(RuntimeError):
     """Raised when Whisper cannot be loaded or transcription fails."""
 
 
+class NoSpeechDetectedError(ValueError):
+    """Raised when a valid recording does not contain intelligible speech."""
+
+
 class ASRService:
     _instance: "ASRService | None" = None
     _lock = threading.Lock()
@@ -38,12 +42,15 @@ class ASRService:
                     str(audio_path),
                     language=os.getenv("WHISPER_LANGUAGE", "vi"),
                     fp16=use_fp16,
+                    task="transcribe",
+                    initial_prompt=os.getenv("WHISPER_INITIAL_PROMPT", "").strip() or None,
+                    condition_on_previous_text=False,
                 )
             except Exception as error:
                 raise ASRUnavailableError(f"transcription failed: {error}") from error
             transcript = str(result.get("text", "")).strip()
             if not transcript:
-                raise ASRUnavailableError("transcription produced no text")
+                raise NoSpeechDetectedError("no intelligible speech was detected")
             return transcript
 
         return await asyncio.to_thread(run)

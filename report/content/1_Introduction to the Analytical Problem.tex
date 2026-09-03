@@ -15,13 +15,13 @@
 Older adults benefit from hands-free access to time, medication information, and caregiver-supported routines. At the same time, commands that change health-related state must resist accidental or unauthorized execution. Dearly addresses this tension with the following objectives:
 \begin{itemize}
     \item provide voice-based interaction in Vietnamese through an accessible Android interface;
-    \item execute a general information request without speaker authentication;
+    \item provide a public general-information mode without a Dearly or Firebase session;
     \item require successful SV before a medication dose is marked as taken; and
-    \item use SID only for personalization, limited to a caller's trusted caregiver--elder group.
+    \item use SID for safe personalization, limited to a caller's trusted caregiver--elder group.
 \end{itemize}
 
 \subsection{Required Assistant Use Cases}
-Table~\ref{tab:use-cases} maps the required project behaviors to the implemented assistant functions. The first query is intentionally informational: it may detect that a protected action was requested, but it cannot mutate medication data. A second recording is required for SV before the protected endpoint accepts the action.
+Table~\ref{tab:use-cases} maps the required project behaviors to the implemented assistant functions. The public function intentionally exposes no personal care data. For the important medication action, the initial request only resolves the named unpaid dose. Dearly reads back its medicine name and scheduled time, then asks for a spoken ``Đúng rồi'' confirmation and requires SV on that fresh recording before any state change.
 
 \begin{table}[H]
 \centering
@@ -29,11 +29,11 @@ Table~\ref{tab:use-cases} maps the required project behaviors to the implemented
 \toprule
 \textbf{Category} & \textbf{Example function} & \textbf{Control} \\
 \midrule
-General & Ask for the current time/date or medication schedule. & No SV; response uses local time or stored schedule. \\
+General & Public ``Ask Dearly'': ask for the current time/date or how to use Dearly before sign-in. & No Firebase/Dearly session, no SV/SID, and no profile, medication, or contact data. \\
 \addlinespace[3pt]
-Important & Mark a medication dose as taken. & One-to-one SV and a short-lived, one-use voice grant. \\
+Important & Say ``Tôi đã uống Amlodipine rồi'', then say ``Đúng rồi'' after Dearly reads back the medicine and scheduled time. & Resolve today's unpaid dose; require successful SV of the confirmation recording and a short-lived, one-use voice grant. \\
 \addlinespace[3pt]
-Personalized & Return a response addressed to a recognized linked family member. & One-to-many SID over only the caller and directly linked caregiver/elder profiles. \\
+Personalized & Ask ``Hôm nay tôi cần uống thuốc gì?'' and receive the identified person's name and schedule. & One-to-many SID over only the caller and directly linked caregiver/elder profiles; backend re-checks the relationship before loading data. \\
 \bottomrule
 \end{tabularx}
 \caption{Dearly voice-assistant use cases and security controls.}
@@ -62,4 +62,5 @@ Figure~\ref{fig:architecture} shows the production design. Android is the only p
 \end{figure}
 
 \subsection{Voice-Request Processing Flow}
-For a normal query, the AI service transcribes the recording with Whisper, identifies a speaker when trusted profiles are supplied, and classifies the request. The API enriches allowed general intents such as \texttt{ASK\_TIME}, \texttt{ASK\_DATE}, and \texttt{CHECK\_MEDICATIONS} from local time or PostgreSQL. A protected intent returns a response requesting verification instead of performing the action. This separation ensures that ASR and intent classification do not become authorization decisions.
+For a medication confirmation, the read-back includes both the matched medicine and its scheduled time before Dearly accepts a fresh ``Đúng rồi'' response.
+For public queries, Android posts audio to a separate unauthenticated endpoint. The API permits only \texttt{ASK\_TIME}, \texttt{ASK\_DATE}, greeting, and usage guidance; it never loads enrollment, medication, contact, or relationship records. For authenticated queries, the AI service transcribes the recording with Whisper, identifies a speaker when trusted profiles are supplied, and classifies the request. The API enriches \texttt{ASK\_TIME}, \texttt{ASK\_DATE}, and \texttt{CHECK\_MEDICATIONS} from local time or PostgreSQL. A spoken \texttt{MARK\_TAKEN} request includes the medicine name: Android finds the matching unpaid dose, asks the elder to say ``Đúng rồi,'' and verifies that confirmation recording against the signed-in elder. Only a successful SV result creates a grant; therefore ASR, intent classification, and SID alone never authorize a medication update.

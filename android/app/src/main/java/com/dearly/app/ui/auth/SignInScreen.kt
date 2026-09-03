@@ -21,8 +21,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -77,7 +78,7 @@ fun SignInScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .height(548.dp)
+                .height(450.dp)
                 .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 .background(Color.White)
                 .border(1.dp, Color(0xFFC1C7CF), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
@@ -91,15 +92,8 @@ fun SignInScreen(
                     .padding(horizontal = 20.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.ArrowBack,
-                    contentDescription = "Quay lại",
-                    tint = SignInGreen,
-                    modifier = Modifier.size(22.dp)
-                )
-                Spacer(modifier = Modifier.width(16.dp))
                 Text(
-                    text = "Chào mừng trở lại!",
+                    text = "Đăng nhập",
                     color = SignInGreen,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold
@@ -121,6 +115,11 @@ fun SignInScreen(
                     label = "Số điện thoại",
                     placeholder = "Nhập số điện thoại",
                     icon = Icons.Default.Phone
+                )
+                Text(
+                    "Nhập số điện thoại, ví dụ 0818916621.",
+                    color = Color(0xFF6B7280),
+                    fontSize = 13.sp
                 )
                 error?.let { Text(it, color = Color(0xFFC62828), fontSize = 13.sp) }
                 Button(
@@ -219,6 +218,7 @@ private fun SignInField(
             onValueChange = onValueChange,
             placeholder = { Text(placeholder, color = Color(0xFF6B7280), fontSize = 15.sp) },
             leadingIcon = { Icon(icon, null, tint = SignInGreen, modifier = Modifier.size(20.dp)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
             singleLine = true,
             modifier = Modifier
                 .fillMaxWidth()

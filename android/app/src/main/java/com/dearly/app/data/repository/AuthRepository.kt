@@ -21,11 +21,17 @@ class AuthRepository @Inject constructor(
     private val tokenStore: TokenStore
 ) {
     suspend fun createBackendSession(role: UserRole): UserDto {
+        return createBackendSession(role.name)
+    }
+
+    suspend fun resumeBackendSession(): UserDto = createBackendSession(null)
+
+    private suspend fun createBackendSession(role: String?): UserDto {
         val firebaseUser = FirebaseAuth.getInstance().currentUser
             ?: error("Firebase user is not authenticated")
         val firebaseIdToken = firebaseUser.getIdToken(false).await().token
             ?: error("Firebase did not return an ID token")
-        val session = api.createSession(SessionRequest(firebaseIdToken, role.name))
+        val session = api.createSession(SessionRequest(firebaseIdToken, role))
         tokenStore.save(session.accessToken, session.refreshToken, session.user.id, session.user.role)
         runCatching {
             val fcmToken = FirebaseMessaging.getInstance().token.await()

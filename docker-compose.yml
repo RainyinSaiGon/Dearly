@@ -18,8 +18,11 @@ services:
     image: redis:7-alpine
     container_name: dearly-redis
     restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -115,6 +118,11 @@ services:
     container_name: dearly-ai-service
     restart: unless-stopped
     env_file: .env
+    environment:
+      WHISPER_MODEL_CACHE: /models/cache/whisper
+      WHISPER_MODEL: ${WHISPER_MODEL:-medium}
+      WHISPER_LANGUAGE: vi
+      WHISPER_INITIAL_PROMPT: "Đây là yêu cầu tiếng Việt cho trợ lý chăm sóc sức khỏe Dearly: Mấy giờ rồi? Hôm nay uống thuốc gì? Gọi cho con tôi."
     expose:
       - "5000"
     volumes:
@@ -128,4 +136,5 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
   kafka_data:

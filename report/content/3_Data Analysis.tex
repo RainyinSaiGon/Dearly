@@ -40,38 +40,68 @@ VIVOS fine-tuned ECAPA & \textbf{1.28\%} & \textbf{0.001628} & \textbf{100.00\%}
 Fine-tuning lowers EER by 3.12 percentage points, or 70.9\% relative to the baseline. The experiment's EER operating threshold is 0.34559793992808. It is not automatically deployed: the current application threshold remains 0.80 and requires calibration on representative elderly-user recordings before it can be changed. The test-set result therefore demonstrates Vietnamese-domain performance, not a clinical or elderly-population validation.
 
 \subsection{Speaker Enrollment, Verification, and Identification Integration}
-Enrollment is available in Android settings. The user reads five prompts; the client captures each recording and posts it with its phrase index to the backend. The backend forwards the audio to the FastAPI enrollment route, receives an ECAPA embedding, upserts the phrase record, and updates the profile average. A query uses stored profiles only from the authenticated caller and directly linked caregiver/elder accounts. The backend checks that an AI-returned identity belongs to that trusted set before exposing \texttt{recognized\_user\_name} for personalization.
+\subsubsection{Enrollment procedure and stored voice data}
+Enrollment starts after the new user has created a Dearly account. In \emph{Settings -- Voice enrollment}, the user records five displayed Vietnamese prompts with visible $0/5$--$5/5$ progress. A caregiver may help an elder operate the device, but the enrolled speaker must say each prompt personally. Android's amplitude-based VAD requires at least 0.8 seconds of sustained activity; silent or too-short recordings are deleted locally and the elder is asked to record that same phrase again. The Android client sends only an accepted temporary audio file and its \texttt{phrase\_index} 0--4 to the authenticated \texttt{/api/v1/voice/enroll} endpoint. The API obtains the account identifier from the JWT rather than trusting a client-provided user identifier.
 
-Figure~\ref{fig:protected-flow} describes the protected medication flow. The voice grant is random, valid for two minutes, bound to a user and intent, usable once, and stored as a SHA-256 hash. The medication endpoint consumes the grant transactionally; a request without a valid grant is rejected.
+The Go API forwards the recording to FastAPI. The AI service validates the audio, performs a second intelligible-speech check with ASR before extracting an ECAPA-TDNN embedding, and deletes the temporary server-side file in a \texttt{finally} block. Thus, a direct API client cannot enroll a silent/unintelligible recording merely by bypassing Android's VAD. The Android client also deletes its temporary recording after the upload. Consequently, the enrollment database contains embeddings, not raw voice recordings. Each of the five phrase vectors is stored first; after phrase 5, the backend computes an element-wise mean and stores the resulting runtime profile at \texttt{phrase\_index=-1}. Re-recording a phrase upserts that phrase's row and recomputes the average when all five inputs are available. A reset deletes all enrollment rows for that user.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{3.5cm}>{\raggedright\arraybackslash}X}
+\toprule
+\textbf{Stored item} & \textbf{Purpose and retention} \\
+\midrule
+\texttt{user\_id} & UUID foreign key to the registered user; it binds an embedding to its owner and is deleted with that user. \\
+\texttt{phrase\_index} 0--4 & Identifies one of the five prompted recordings; the unique user/index pair allows a phrase to be replaced safely. \\
+\texttt{embedding\_vector} & Serialized 192-dimensional \texttt{float32} ECAPA-TDNN vector stored as \texttt{BYTEA}; no raw recording is needed for later SV or SID. \\
+\texttt{phrase\_index=-1} & Element-wise average of the five phrase embeddings; this is the only profile supplied to runtime verification and identification. \\
+\texttt{created\_at} & Records the most recent enrollment or replacement time for management and audit purposes. \\
+\bottomrule
+\end{tabularx}
+\caption{Information maintained for speaker verification and identification.}
+\label{tab:enrollment-storage}
+\end{table}
+
+\subsubsection{Verification and identification at runtime}
+For SV, ECAPA extracts an embedding from fresh speech and the AI service computes cosine similarity against the signed-in user's average profile. The deployment threshold is currently 0.80. A pass produces a random grant bound to the user and protected intent; its SHA-256 hash is stored, it expires after two minutes, and the medication endpoint consumes it exactly once. The API records protected verification attempts, rejects a replay of a previously successful raw recording for 24 hours, and pauses verification for 15 minutes after five failed attempts. The named-dose/time read-back followed by a new spoken confirmation is an interaction check; exact raw-audio replay is blocked, but a dedicated anti-spoof/liveness model is not yet part of the system and re-encoded playback remains a stated limitation. For SID, the backend supplies only average profiles for the caller and directly linked caregiver/elder accounts. FastAPI returns the highest-scoring identity only when it meets the SID threshold. The Go API then independently re-checks that the returned identity is still in that trusted relationship group before it loads a name or medication schedule.
+
+Figure~\ref{fig:protected-flow} describes the hands-free protected medication flow. The elder does not need to tap a particular dose: they can say, for example, ``Tôi đã uống Amlodipine rồi.'' Dearly extracts the medicine name and finds today's matching unpaid dose, but does not update it yet. Dearly reads back the medicine and scheduled time, for example, ``Bác xác nhận đã uống Amlodipine lúc 08:30 phải không?'', then asks the elder to say ``Đúng rồi.'' SV runs on this fresh confirmation recording before the grant is issued. A silent, too-short, replayed, or failed confirmation leaves the dose unchanged and asks the elder to retry.
 
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[node distance=0.8cm and 0.45cm]
-\node[service] (user) {Elder in Android app};
-\node[service, right=of user] (query) {Voice query\\protected intent detected};
-\node[service, right=of query] (verify) {Second recording\\ECAPA verification};
-\node[service, below=of verify] (grant) {One-use voice grant\\user + intent + expiry};
-\node[service, left=of grant] (med) {Mark dose taken\\grant consumed};
+\node[service] (user) {Elder says\\``Tôi đã uống [medicine] rồi''};
+\node[service, right=of user] (dose) {ASR + intent\\match today's unpaid dose};
+\node[service, right=of dose] (prompt) {Ask elder to say\\``Đúng rồi''};
+\node[service, below=of prompt] (auth) {SV on fresh\\confirmation audio};
+\node[service, below=of auth] (grant) {One-use grant\\user + intent + expiry};
+\node[service, below=of grant] (med) {Mark dose taken\\grant consumed};
 \node[datastore, below=of med] (database) {PostgreSQL};
-\draw[flow] (user) -- (query);
-\draw[flow] (query) -- (verify);
-\draw[flow] (verify) -- (grant);
+\node[service, below=of dose] (fallback) {No SV pass, replay,\\or unclear speech: retry};
+\draw[flow] (user) -- (dose);
+\draw[flow] (dose) -- (prompt);
+\draw[flow] (prompt) -- (auth);
+\draw[flow] (auth) -- node[right,font=\scriptsize]{pass} (grant);
 \draw[flow] (grant) -- (med);
 \draw[flow] (med) -- (database);
+\draw[flow] (auth.south west) to[out=-135,in=0] node[above,font=\scriptsize]{fail} (fallback.east);
 \end{tikzpicture}
-\caption{Speaker-verification-gated medication action. A first query never authorizes the mutation.}
+\caption{Hands-free medication confirmation. The named-dose request is followed by a fresh spoken confirmation; successful SV is required before the medication update.}
 \label{fig:protected-flow}
 \end{figure}
 
 \subsection{Implementation Validation and Demonstration Evidence}
-The completed engineering checks include AI-service linting and focused tests, Docker Compose configuration validation, a ready AI container with the trained checkpoint, backend unit tests for voice grants and general responses, and a successful Android debug build. These are implementation checks; they do not replace a physical-device demonstration. In particular, the current evidence does not claim successful Firebase authentication, microphone capture, Vietnamese TTS playback, real enrollment, SV, or SID on a device.
+\paragraph{SID personalization beyond the name.} After a SID match is accepted and its caregiver/elder relationship is re-checked, the backend loads preferences only for that identified person: gentle or direct reminder wording, Vietnamese TTS speed, an optional preferred contact, and daily-schedule inclusion. The response contains these preferences; Android applies the selected rate to that TTS response and displays a small personalization label. Public requests and untrusted identities cannot read them.
+
+The completed engineering checks include AI-service linting and focused tests, Docker Compose configuration validation, backend unit tests for voice grants, replay hashing, and general responses, protected-route authorization checks, and successful Android debug build and unit-test runs. The public voice route is reachable without a token, whereas the medication update route rejects unauthenticated requests or requests without a valid voice grant. These checks validate the contract and the compiled client; they do not replace a recorded demonstration with real enrolled voices.
 
 The following captioned placeholders reserve the exact visual evidence required for the final submission. They must be replaced with real screenshots or video frames before the report is submitted.
 
-\pendingdemo{Android settings showing the five-phrase enrollment dialog and a completed $5/5$ state.}{Reserved evidence: speaker enrollment workflow.}
-\pendingdemo{A recorded general request for time, date, or the medication schedule, with its visible response.}{Reserved evidence: unauthenticated general voice function.}
-\pendingdemo{Successful medication verification followed by a second-speaker failure case.}{Reserved evidence: SV-protected medication action.}
-\pendingdemo{Two enrolled and linked users receiving a response personalized with the recognized name.}{Reserved evidence: SID personalization.}
+\pendingdemo{Elder Settings $\rightarrow$ Voice Security, showing the enrollment dialog with all $5/5$ phrases saved.}{Screenshot 1: completed speaker enrollment.}
+\pendingdemo{Public Dearly chat before sign-in: ask ``Bây giờ là mấy giờ?'' and show the completed Vietnamese answer.}{Screenshot 2: public general voice function.}
+\pendingdemo{Create a four-panel sequence: (1) Elder Medication with a dose marked ``Chưa uống''; (2) after saying ``Tôi đã uống Amlodipine rồi'', Dearly asks for ``Đúng rồi'' with the correct medicine and time; (3) a successful ``Đúng rồi'' verification marks that dose ``Đã xong'' or ``Đã uống''; and (4) a different or unregistered voice fails verification while another unpaid dose remains ``Chưa uống''.}{Screenshots 3--6: hands-free SV-protected medication action, including success and failure.}
+\pendingdemo{Create a two-panel comparison: for each of two linked and enrolled users, ask ``Hôm nay tôi cần uống thuốc gì?'' and show that person's recognized name and own medication schedule.}{Screenshot 7: SID-based personalized medication response.}
 
 \subsection{Limitations and Conclusion}
-Dearly provides a reportable end-to-end design: VIVOS fine-tuning improves held-out verification performance, ECAPA embeddings drive both SV and SID, and a server-side grant prevents a classified protected voice command from becoming an authorization decision. The remaining limitation is evidence collection rather than a claim of completed live validation. The final package must include real-device demonstration media, source code, the report, and a Drive-link text file for large dataset/model artifacts when needed. The ZIP filename for this team should use both student IDs: \texttt{23127118\_23127144.zip}.
+Dearly provides a reportable end-to-end design: VIVOS fine-tuning improves held-out verification performance, ECAPA embeddings drive both SV and SID, and a server-side grant prevents ASR, intent classification, or SID alone from authorizing a protected medication update. The public assistant demonstrates a genuinely non-authenticated function without exposing private information. The remaining limitation is final evidence collection: the submission should replace every placeholder with real-device screenshots or video frames for enrollment, public interaction, successful hands-free medication confirmation, failed verification, and two-person SID personalization. The final package must include the source code, report, and a Drive-link text file for large dataset/model artifacts when needed. The ZIP filename for this team should use both student IDs: \texttt{23127118\_23127144.zip}.

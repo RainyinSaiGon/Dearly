@@ -8,7 +8,7 @@ from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile, st
 
 from app.models.ecapa import EcapaTDNN, ModelUnavailableError
 from app.routers.identify import parse_enrolled_speakers
-from app.services.asr import ASRService, ASRUnavailableError
+from app.services.asr import ASRService, ASRUnavailableError, NoSpeechDetectedError
 from app.services.audio import (
     AudioValidationError,
     remove_temporary_audio,
@@ -51,7 +51,8 @@ async def voice_query(
             identified_user_id, identification_score = model_provider().identify(path, speakers)
         intent = await llm_provider().classify_intent(transcript)
         return {
-            "transcript": transcript,
+            "transcript": intent.get("display_transcript", transcript),
+            "raw_transcript": transcript,
             "intent": intent["intent"],
             "entities": intent["entities"],
             "response_text": intent["response_text"],
@@ -61,6 +62,8 @@ async def voice_query(
             "identification_score": identification_score,
             "request_user_id": x_user_id,
         }
+    except NoSpeechDetectedError as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(error)) from error
     except (ASRUnavailableError, ModelUnavailableError) as error:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(error)) from error
     finally:

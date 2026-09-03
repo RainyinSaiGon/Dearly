@@ -48,11 +48,12 @@ class VietnameseTextToSpeech @Inject constructor(
     }
 
     /** Returns a displayable warning when the device cannot speak Vietnamese. */
-    suspend fun speak(text: String): String? {
+    suspend fun speak(text: String, speechRate: Float? = null): String? {
         if (text.isBlank()) return null
 
         initialization.await()?.let { return it }
         return withContext(Dispatchers.Main.immediate) {
+            engine?.setSpeechRate((speechRate ?: 0.92f).coerceIn(0.5f, 1.5f))
             val status = engine?.speak(
                 text,
                 TextToSpeech.QUEUE_FLUSH,

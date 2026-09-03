@@ -16,8 +16,9 @@ import (
 )
 
 var (
-	ErrInvalidRole  = errors.New("role must be ELDER or CAREGIVER")
-	ErrInvalidToken = errors.New("invalid authentication token")
+	ErrInvalidRole           = errors.New("role must be ELDER or CAREGIVER")
+	ErrInvalidToken          = errors.New("invalid authentication token")
+	ErrRoleSelectionRequired = errors.New("a new account must select a role")
 )
 
 type FirebaseTokenVerifier interface {
@@ -48,15 +49,22 @@ type Service struct {
 	events   events.Publisher
 }
 
+const upsertUserQuery = `
+	INSERT INTO users(firebase_uid, phone_number, email, name, role, avatar_url)
+	VALUES($1, NULLIF($2,''), NULLIF($3,''), $4, $5, NULLIF($6,''))
+	ON CONFLICT(firebase_uid) WHERE firebase_uid IS NOT NULL DO UPDATE SET
+		phone_number=COALESCE(EXCLUDED.phone_number, users.phone_number),
+		email=COALESCE(EXCLUDED.email, users.email),
+		name=CASE WHEN users.name IN ('', 'Dearly user') THEN EXCLUDED.name ELSE users.name END,
+		avatar_url=COALESCE(EXCLUDED.avatar_url, users.avatar_url),
+		updated_at=NOW()
+	RETURNING id::text, phone_number, email, name, role, avatar_url`
+
 func NewService(db *sql.DB, redisClient *redis.Client, firebase FirebaseTokenVerifier, jwtService *jwtpkg.Service, publisher events.Publisher) *Service {
 	return &Service{db: db, redis: redisClient, firebase: firebase, jwt: jwtService, events: publisher}
 }
 
 func (s *Service) CreateSession(ctx context.Context, firebaseIDToken, requestedRole string) (*Session, error) {
-	role := strings.ToUpper(strings.TrimSpace(requestedRole))
-	if role != "ELDER" && role != "CAREGIVER" {
-		return nil, ErrInvalidRole
-	}
 	token, err := s.firebase.VerifyIDToken(ctx, firebaseIDToken)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
@@ -76,6 +84,24 @@ func (s *Service) CreateSession(ctx context.Context, firebaseIDToken, requestedR
 			name = "Dearly user"
 		}
 	}
+	if user, err := s.findExistingUser(ctx, token.UID, phone, email); err == nil {
+		session, err := s.issueSession(ctx, user)
+		if err != nil {
+			return nil, err
+		}
+		_ = s.events.Publish(ctx, "auth.session.created", user.ID, map[string]any{"user_id": user.ID, "role": user.Role})
+		return session, nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+
+	role := strings.ToUpper(strings.TrimSpace(requestedRole))
+	if role == "" {
+		return nil, ErrRoleSelectionRequired
+	}
+	if role != "ELDER" && role != "CAREGIVER" {
+		return nil, ErrInvalidRole
+	}
 
 	user, err := s.upsertUser(ctx, token.UID, phone, email, name, role, avatar)
 	if err != nil {
@@ -93,6 +119,35 @@ func (s *Service) CreateSession(ctx context.Context, firebaseIDToken, requestedR
 	}
 	_ = s.events.Publish(ctx, "auth.session.created", user.ID, map[string]any{"user_id": user.ID, "role": user.Role})
 	return session, nil
+}
+
+// findExistingUser makes a role-less sign-in safe: only the same Firebase
+// identity, or an older unclaimed profile with the same verified phone/email,
+// may resume an account. A different Firebase identity cannot claim it.
+func (s *Service) findExistingUser(ctx context.Context, uid, phone, email string) (User, error) {
+	var user User
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id::text, phone_number, email, name, role, avatar_url
+		FROM users
+		WHERE firebase_uid=$1 OR (
+			firebase_uid IS NULL AND (
+				(NULLIF($2,'') IS NOT NULL AND phone_number=NULLIF($2,'')) OR
+				(NULLIF($3,'') IS NOT NULL AND email=NULLIF($3,''))
+			)
+		)
+		ORDER BY CASE WHEN firebase_uid=$1 THEN 0 ELSE 1 END
+		LIMIT 1`, uid, phone, email,
+	).Scan(&user.ID, &user.PhoneNumber, &user.Email, &user.Name, &user.Role, &user.AvatarURL)
+	if err != nil {
+		return User{}, err
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE users SET firebase_uid=$1, updated_at=NOW() WHERE id=$2 AND firebase_uid IS NULL`,
+		uid, user.ID,
+	); err != nil {
+		return User{}, fmt.Errorf("claim existing Firebase user: %w", err)
+	}
+	return user, nil
 }
 
 func (s *Service) Refresh(ctx context.Context, refreshToken string) (*Session, error) {
@@ -156,16 +211,7 @@ func (s *Service) upsertUser(ctx context.Context, uid, phone, email, name, role,
 		)`, uid, phone, email); err != nil {
 		return User{}, fmt.Errorf("link existing Firebase user: %w", err)
 	}
-	err := s.db.QueryRowContext(ctx, `
-		INSERT INTO users(firebase_uid, phone_number, email, name, role, avatar_url)
-		VALUES($1, NULLIF($2,''), NULLIF($3,''), $4, $5, NULLIF($6,''))
-		ON CONFLICT(firebase_uid) DO UPDATE SET
-			phone_number=COALESCE(EXCLUDED.phone_number, users.phone_number),
-			email=COALESCE(EXCLUDED.email, users.email),
-			name=CASE WHEN users.name IN ('', 'Dearly user') THEN EXCLUDED.name ELSE users.name END,
-			avatar_url=COALESCE(EXCLUDED.avatar_url, users.avatar_url),
-			updated_at=NOW()
-		RETURNING id::text, phone_number, email, name, role, avatar_url`,
+	err := s.db.QueryRowContext(ctx, upsertUserQuery,
 		uid, phone, email, name, role, avatar,
 	).Scan(&user.ID, &user.PhoneNumber, &user.Email, &user.Name, &user.Role, &user.AvatarURL)
 	if err != nil {

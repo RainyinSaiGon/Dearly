@@ -1,6 +1,7 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.29 (MiKTeX 26.2) (preloaded format=pdflatex 2026.4.4)  1 SEP 2026 13:10
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (MiKTeX 26.2) (preloaded format=pdflatex 2026.4.4)  3 SEP 2026 03:00
 entering extended mode
  restricted \write18 enabled.
+ file:line:error style messages enabled.
  %&-line parsing enabled.
 **./main.tex
 (main.tex
@@ -1678,7 +1679,7 @@ Package hyperref Info: Link coloring ON on input line 7.
 \@outlinefile=\write5
 \openout5 = `main.out'.
 
-<images/Logo_HCMUS.png, id=109, 770.88pt x 770.88pt>
+<images/Logo_HCMUS.png, id=117, 770.88pt x 770.88pt>
 File: images/Logo_HCMUS.png Graphic file (type png)
 <use images/Logo_HCMUS.png>
 Package pdftex.def Info: images/Logo_HCMUS.png  used on input line 42.
@@ -1766,13 +1767,14 @@ Overfull \hbox (1.27603pt too wide) in paragraph at lines 38--38
 []|\T5/lmr/m/n/12 Personalized|  
  []
 
+[6{C:/Users/Vu/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/lm/lm-ts1.enc}]
 LaTeX Font Info:    Trying to load font information for T5+lmtt on input line 4
 4.
+
 (C:\Users\Vu\AppData\Local\Programs\MiKTeX\tex/latex/lm\t5lmtt.fd
 File: t5lmtt.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
-) [6{C:/Users/Vu/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/lm/lm-ts1.enc}])
- [7]
-(content/2_Data Collection, Construction, and Preprocessing.tex
+) [7])
+[8] (content/2_Data Collection, Construction, and Preprocessing.tex
 Underfull \hbox (badness 1117) in paragraph at lines 16--16
 []|\T5/lmr/m/n/12 Fine-tune the ECAPA em-bed-ding model and
  []
@@ -1782,14 +1784,11 @@ Underfull \hbox (badness 10000) in paragraph at lines 16--16
 []|\T5/lmr/m/n/12 Hold-out speaker-verification and speaker-
  []
 
-[8]) [9{C:/Users/Vu/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/lm/lm-rm.enc}
-{C:/Users/Vu/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/lm/lm-mathsy.enc}]
-(content/3_Data Analysis.tex [10{C:/Users/Vu/AppData/Local/Programs/MiKTeX/font
-s/enc/dvips/lm/lm-mathit.enc}]
-LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <10.95> on input line 71.
- [11]) [12] (content/References.tex (main.bbl))
-[13
+[9]) [10{C:/Users/Vu/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/lm/lm-rm.enc
+}{C:/Users/Vu/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/lm/lm-mathsy.enc}]
+(content/3_Data Analysis.tex [11{C:/Users/Vu/AppData/Local/Programs/MiKTeX/font
+s/enc/dvips/lm/lm-mathit.enc}] [12] [13]) [14] [15] (content/References.tex
+(main.bbl)) [16
 
 ] (main.aux)
  ***********
@@ -1797,29 +1796,31 @@ LaTeX2e <2025-11-01>
 L3 programming layer <2026-01-19>
  ***********
 Package rerunfilecheck Info: File `main.out' has not changed.
-(rerunfilecheck)             Checksum: C3A72B584D3942116809FE2245A2B913;3928.
+(rerunfilecheck)             Checksum: 43E797A2DDF1C98233083ED1F449AF52;4511.
  ) 
 Here is how much of TeX's memory you used:
- 44012 strings out of 467867
- 976092 string characters out of 5419787
- 1418242 words of memory out of 5000000
- 72142 multiletter control sequences out of 15000+600000
- 694848 words of font info for 76 fonts, out of 8000000 for 9000
+ 44054 strings out of 467867
+ 976773 string characters out of 5419787
+ 1421406 words of memory out of 5000000
+ 72174 multiletter control sequences out of 15000+600000
+ 705686 words of font info for 79 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
  89i,12n,107p,1599b,858s stack positions out of 10000i,1000n,20000p,200000b,200000s
-<C:/Users/Vu/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmbx12.pfb><
-C:/Users/Vu/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmmi10.pfb><C:/
-Users/Vu/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmmi12.pfb><C:/Use
-rs/Vu/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmr10.pfb><C:/Users/V
-u/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmr12.pfb><C:/Users/Vu/Ap
-pData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmr8.pfb><C:/Users/Vu/AppData
-/Local/Programs/MiKTeX/fonts/type1/public/lm/lmri12.pfb><C:/Users/Vu/AppData/Lo
-cal/Programs/MiKTeX/fonts/type1/public/lm/lmsy10.pfb><C:/Users/Vu/AppData/Local
-/Programs/MiKTeX/fonts/type1/public/lm/lmsy8.pfb><C:/Users/Vu/AppData/Local/Pro
-grams/MiKTeX/fonts/type1/public/lm/lmtt12.pfb>
-Output written on main.pdf (13 pages, 375815 bytes).
+<C:/Users/Vu/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmbx10.pfb><
+C:/Users/Vu/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmbx12.pfb><C:/
+Users/Vu/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmmi10.pfb><C:/Use
+rs/Vu/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmmi12.pfb><C:/Users/
+Vu/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmr10.pfb><C:/Users/Vu/A
+ppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmr12.pfb><C:/Users/Vu/AppDa
+ta/Local/Programs/MiKTeX/fonts/type1/public/lm/lmr8.pfb><C:/Users/Vu/AppData/Lo
+cal/Programs/MiKTeX/fonts/type1/public/lm/lmri12.pfb><C:/Users/Vu/AppData/Local
+/Programs/MiKTeX/fonts/type1/public/lm/lmsy10.pfb><C:/Users/Vu/AppData/Local/Pr
+ograms/MiKTeX/fonts/type1/public/lm/lmsy8.pfb><C:/Users/Vu/AppData/Local/Progra
+ms/MiKTeX/fonts/type1/public/lm/lmtt10.pfb><C:/Users/Vu/AppData/Local/Programs/
+MiKTeX/fonts/type1/public/lm/lmtt12.pfb>
+Output written on main.pdf (16 pages, 451956 bytes).
 PDF statistics:
- 302 PDF objects out of 1000 (max. 8388607)
- 46 named destinations out of 1000 (max. 500000)
- 298 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 343 PDF objects out of 1000 (max. 8388607)
+ 53 named destinations out of 1000 (max. 500000)
+ 314 words of extra memory for PDF output out of 10000 (max. 10000000)
 

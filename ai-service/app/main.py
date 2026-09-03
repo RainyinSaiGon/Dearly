@@ -9,6 +9,8 @@ Provides:
   - Vietnamese TTS (on-device Android)
 """
 
+import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, status
@@ -17,6 +19,7 @@ from dotenv import load_dotenv
 
 from app.models.ecapa import EcapaTDNN
 from app.routers import enroll, identify, query, verify
+from app.services.asr import ASRService
 
 
 # Local runs start from either the repository root or ai-service/. Docker uses
@@ -26,10 +29,18 @@ _repository_root = Path(__file__).resolve().parents[2]
 load_dotenv(_repository_root / ".env")
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Load the configured ASR model before accepting voice requests."""
+    await asyncio.to_thread(ASRService.shared)
+    yield
+
+
 app = FastAPI(
     title="Dearly AI Service",
     version="0.1.0",
     description="Voice processing microservice for Dearly elder-care app",
+    lifespan=lifespan,
 )
 
 

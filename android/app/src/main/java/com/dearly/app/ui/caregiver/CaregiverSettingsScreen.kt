@@ -2,6 +2,8 @@ package com.dearly.app.ui.caregiver
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,6 +27,7 @@ import androidx.compose.material.icons.outlined.Support
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -39,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dearly.app.data.remote.UserDto
 import com.dearly.app.ui.elder.ElderFooter
 import com.dearly.app.ui.elder.ElderTab
 import com.dearly.app.ui.components.VoiceCaptureButton
@@ -63,10 +67,12 @@ fun CaregiverSettingsScreen(
     linkBusy: Boolean = false,
     linkError: String? = null,
     linkMessage: String? = null,
+    linkedElders: List<UserDto> = emptyList(),
     voiceEnrollmentCount: Int = 0,
     voiceMessage: String? = null,
     onGenerateLinkCode: () -> Unit = {},
     onLinkElder: (String) -> Unit = {},
+    onUnlinkElder: (String) -> Unit = {},
     onEnrollVoice: (File) -> Unit = {}
 ) {
     var editProfile by remember { mutableStateOf(false) }
@@ -101,10 +107,12 @@ fun CaregiverSettingsScreen(
                 linkBusy = linkBusy,
                 linkError = linkError,
                 linkMessage = linkMessage,
+                linkedElders = linkedElders,
                 voiceEnrollmentCount = voiceEnrollmentCount,
                 voiceMessage = voiceMessage,
                 onGenerateLinkCode = onGenerateLinkCode,
                 onLinkElder = onLinkElder,
+                onUnlinkElder = onUnlinkElder,
                 onEnrollVoice = onEnrollVoice
             )
         }
@@ -140,10 +148,12 @@ private fun SettingsContent(
     linkBusy: Boolean,
     linkError: String?,
     linkMessage: String?,
+    linkedElders: List<UserDto>,
     voiceEnrollmentCount: Int,
     voiceMessage: String?,
     onGenerateLinkCode: () -> Unit,
     onLinkElder: (String) -> Unit,
+    onUnlinkElder: (String) -> Unit,
     onEnrollVoice: (File) -> Unit
 ) {
     var activeOption by remember { mutableStateOf<SettingsOption?>(null) }
@@ -152,7 +162,13 @@ private fun SettingsContent(
     var showLogoutConfirmation by remember { mutableStateOf(false) }
     var showFamilyLink by remember { mutableStateOf(false) }
     var showVoiceEnrollment by remember { mutableStateOf(false) }
-    Column(modifier.padding(horizontal = 12.dp, vertical = 22.dp)) {
+    var elderToUnlink by remember { mutableStateOf<UserDto?>(null) }
+    // Keep every account action reachable on smaller screens while the bottom navigation stays fixed.
+    Column(
+        modifier
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp, vertical = 22.dp)
+    ) {
         Surface(color = Color.White, shape = RoundedCornerShape(12.dp), shadowElevation = 1.dp) {
             Column(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Avatar(editable = false)
@@ -184,13 +200,20 @@ private fun SettingsContent(
                 SettingRow(Icons.Outlined.Support, "Hỗ trợ") { activeOption = SettingsOption.SUPPORT }
             }
         }
-        Spacer(Modifier.weight(1f))
+        if (!elderMode) {
+            LinkedEldersSection(
+                elders = linkedElders,
+                onRequestUnlink = { elderToUnlink = it }
+            )
+        }
+        Spacer(Modifier.height(24.dp))
         Button(
             onClick = { showLogoutConfirmation = true },
             modifier = Modifier.fillMaxWidth().height(52.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFF6F4), contentColor = Color(0xFFD22C2C)),
             border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFD5D0))
         ) { Text("Đăng xuất", fontWeight = FontWeight.Bold) }
+        Spacer(Modifier.height(8.dp))
     }
     activeOption?.let { option ->
         SettingsOptionDialog(
@@ -235,6 +258,70 @@ private fun SettingsContent(
             onDismiss = { showVoiceEnrollment = false }
         )
     }
+    elderToUnlink?.let { elder ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { elderToUnlink = null },
+            title = { Text("Ngắt kết nối với ${elder.name}?") },
+            text = { Text("Bác sẽ không còn xem được thông tin chăm sóc của người này.") },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { elderToUnlink = null }) {
+                    Text("Giữ kết nối")
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        onUnlinkElder(elder.id)
+                        elderToUnlink = null
+                    }
+                ) {
+                    Text("Ngắt kết nối", color = Color(0xFFD22C2C))
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun LinkedEldersSection(
+    elders: List<UserDto>,
+    onRequestUnlink: (UserDto) -> Unit
+) {
+    Text(
+        "NGƯỜI THÂN ĐÃ KẾT NỐI",
+        color = Color(0xFF66736F),
+        fontSize = 11.sp,
+        modifier = Modifier.padding(top = 22.dp, bottom = 10.dp)
+    )
+    Surface(color = Color.White, shape = RoundedCornerShape(12.dp)) {
+        if (elders.isEmpty()) {
+            Text(
+                "Chưa có người thân nào được kết nối.",
+                color = Color(0xFF66736F),
+                fontSize = 14.sp,
+                modifier = Modifier.padding(16.dp)
+            )
+        } else {
+            Column {
+                elders.forEach { elder ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(elder.name, color = SettingsForest, fontWeight = FontWeight.SemiBold)
+                            elder.phoneNumber?.let {
+                                Text(it, color = Color(0xFF788387), fontSize = 13.sp)
+                            }
+                        }
+                        androidx.compose.material3.TextButton(onClick = { onRequestUnlink(elder) }) {
+                            Text("Ngắt kết nối", color = Color(0xFFD22C2C), fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 private val enrollmentPhrases = listOf(
@@ -269,6 +356,12 @@ private fun VoiceEnrollmentDialog(
         },
         text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                LinearProgressIndicator(
+                    progress = { count.toFloat() / enrollmentPhrases.size },
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                    color = SettingsForest,
+                    trackColor = Color(0xFFE3ECE7)
+                )
                 Text(
                     if (count == enrollmentPhrases.size) {
                         "Đã lưu đủ ${enrollmentPhrases.size} câu xác minh."
@@ -291,7 +384,8 @@ private fun VoiceEnrollmentDialog(
                         onAudioReady = onAudioReady,
                         enabled = !busy,
                         modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-                        idleLabel = "Ghi câu này"
+                        idleLabel = "Ghi câu này",
+                        onError = { /* The component shows the Vietnamese retry message. */ }
                     )
                 }
                 message?.let {

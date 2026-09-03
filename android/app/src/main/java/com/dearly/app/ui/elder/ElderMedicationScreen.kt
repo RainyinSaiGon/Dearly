@@ -51,6 +51,8 @@ fun ElderMedicationScreen(
     onOpenSettings: () -> Unit = {}
 ) {
     var selected by remember { mutableStateOf<MedicationLog?>(null) }
+    var requiresVerification by remember { mutableStateOf(false) }
+    var verificationHint by remember { mutableStateOf<String?>(null) }
     val completed = logs.count { it.status == DoseStatus.TAKEN }
     Column(Modifier.fillMaxSize().background(Color(0xFFFCFCF9))) {
         ElderHeader()
@@ -82,7 +84,11 @@ fun ElderMedicationScreen(
                     modifier = Modifier.padding(top = 14.dp)
                 ) {
                     items(logs, key = MedicationLog::id) { log ->
-                        DoseRow(log, enabled = !busy && log.status != DoseStatus.TAKEN) { selected = log }
+                        DoseRow(log, enabled = !busy && log.status != DoseStatus.TAKEN) {
+                            selected = log
+                            requiresVerification = true
+                            verificationHint = null
+                        }
                     }
                 }
             }
@@ -96,16 +102,27 @@ fun ElderMedicationScreen(
             text = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        "Bác đọc câu xác minh để đánh dấu ${log.medicationName} đã uống.",
+                        if (requiresVerification) {
+                            "Bác nói ‘Đúng rồi’ để xác nhận đã uống ${log.medicationName}. Dearly sẽ kiểm tra giọng nói trước khi lưu."
+                        } else {
+                            "Bác chỉ cần nói bình thường. Dearly sẽ nhận diện giọng nói để xác nhận ${log.medicationName}."
+                        },
                         textAlign = TextAlign.Center
                     )
+                    verificationHint?.let {
+                        Text(
+                            it,
+                            color = Color(0xFF8A4B19),
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(top = 10.dp)
+                        )
+                    }
                     VoiceCaptureButton(
-                        onAudioReady = { audio ->
-                            onVerifyTaken(log, audio) { selected = null }
-                        },
+                        onAudioReady = { audio -> onVerifyTaken(log, audio) { selected = null } },
                         enabled = !busy,
                         modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-                        idleLabel = "Nói câu xác minh"
+                        idleLabel = if (requiresVerification) "Nói: Đúng rồi" else "Nói để xác nhận"
                     )
                 }
             },

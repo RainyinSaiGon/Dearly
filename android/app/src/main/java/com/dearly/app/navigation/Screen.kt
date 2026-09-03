@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets
 sealed class Screen(val route: String) {
     object Onboarding : Screen("onboarding")
     object PhoneAuth : Screen("phone_auth")
+    object PublicAssistant : Screen("public_assistant")
     object SignUp : Screen("sign_up")
     object OtpVerification : Screen("otp_verification/{verificationId}") {
         fun createRoute(verificationId: String): String {

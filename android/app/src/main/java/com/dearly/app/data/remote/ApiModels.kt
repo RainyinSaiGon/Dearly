@@ -4,7 +4,7 @@ import com.google.gson.annotations.SerializedName
 
 data class SessionRequest(
     @SerializedName("firebase_id_token") val firebaseIdToken: String,
-    val role: String
+    val role: String? = null
 )
 
 data class RefreshRequest(@SerializedName("refresh_token") val refreshToken: String)
@@ -100,11 +100,19 @@ data class VoiceVerificationDto(
     @SerializedName("expires_in") val expiresIn: Long?
 )
 
+data class VoicePersonalizationDto(
+    @SerializedName("reminder_style") val reminderStyle: String,
+    @SerializedName("speech_rate") val speechRate: Float,
+    @SerializedName("preferred_contact_name") val preferredContactName: String?,
+    @SerializedName("include_daily_schedule") val includeDailySchedule: Boolean
+)
+
 data class VoiceQueryDto(
     val transcript: String,
     val intent: String,
     val entities: Map<String, Any?>,
     @SerializedName("response_text") val responseText: String,
+    val personalization: VoicePersonalizationDto? = null,
     @SerializedName("sv_required") val svRequired: Boolean,
     @SerializedName("sv_passed") val svPassed: Boolean?,
     @SerializedName("identified_user_id") val identifiedUserId: String?,

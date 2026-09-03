@@ -83,6 +83,7 @@ func main() {
 
 	v1 := router.Group("/api/v1")
 	auth.NewHandler(authService).RegisterRoutes(v1.Group("/auth"))
+	voice.NewHandler(voiceService).RegisterPublicRoutes(v1.Group("/public/voice"))
 	protected := v1.Group("", auth.JWTMiddleware(jwtService))
 	user.NewHandler(userService).RegisterRoutes(protected.Group("/users"))
 	contact.NewHandler(contactService, elderResolver).RegisterRoutes(protected.Group("/contacts"))

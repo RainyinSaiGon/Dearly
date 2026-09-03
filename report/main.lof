@@ -1,7 +1,7 @@
 \babel@toc {english}{}\relax 
-\contentsline {figure}{\numberline {1}{\ignorespaces Dearly service architecture. The Android app does not call the database, Kafka, or AI service directly.}}{7}{figure.caption.4}%
-\contentsline {figure}{\numberline {2}{\ignorespaces Speaker-verification-gated medication action. A first query never authorizes the mutation.}}{11}{figure.caption.8}%
-\contentsline {figure}{\numberline {3}{\ignorespaces Reserved evidence: speaker enrollment workflow.}}{11}{figure.caption.9}%
-\contentsline {figure}{\numberline {4}{\ignorespaces Reserved evidence: unauthenticated general voice function.}}{12}{figure.caption.10}%
-\contentsline {figure}{\numberline {5}{\ignorespaces Reserved evidence: SV-protected medication action.}}{12}{figure.caption.11}%
-\contentsline {figure}{\numberline {6}{\ignorespaces Reserved evidence: SID personalization.}}{12}{figure.caption.12}%
+\contentsline {figure}{\numberline {1}{\ignorespaces Dearly service architecture. The Android app does not call the database, Kafka, or AI service directly.}}{8}{figure.caption.4}%
+\contentsline {figure}{\numberline {2}{\ignorespaces Hands-free medication confirmation. The named-dose request is followed by a fresh spoken confirmation; successful SV is required before the medication update.}}{13}{figure.caption.9}%
+\contentsline {figure}{\numberline {3}{\ignorespaces Screenshot 1: completed speaker enrollment.}}{14}{figure.caption.11}%
+\contentsline {figure}{\numberline {4}{\ignorespaces Screenshot 2: public general voice function.}}{14}{figure.caption.12}%
+\contentsline {figure}{\numberline {5}{\ignorespaces Screenshots 3--6: hands-free SV-protected medication action, including success and failure.}}{14}{figure.caption.13}%
+\contentsline {figure}{\numberline {6}{\ignorespaces Screenshot 7: SID-based personalized medication response.}}{14}{figure.caption.14}%

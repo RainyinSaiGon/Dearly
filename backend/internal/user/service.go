@@ -15,9 +15,10 @@ import (
 )
 
 var (
-	ErrInvalidLinkCode = errors.New("link code is invalid or expired")
-	ErrLinkNotFound    = errors.New("caregiver link not found")
-	ErrRoleNotAllowed  = errors.New("account role cannot perform this link operation")
+	ErrInvalidLinkCode         = errors.New("link code is invalid or expired")
+	ErrLinkNotFound            = errors.New("caregiver link not found")
+	ErrRoleNotAllowed          = errors.New("account role cannot perform this link operation")
+	ErrInvalidVoicePreferences = errors.New("voice preferences are invalid")
 )
 
 const (
@@ -47,6 +48,21 @@ type Updates struct {
 	City      *string `json:"city"`
 	AvatarURL *string `json:"avatar_url"`
 	FCMToken  *string `json:"fcm_token"`
+}
+
+type VoicePreferences struct {
+	ReminderStyle        string  `json:"reminder_style"`
+	SpeechRate           float64 `json:"speech_rate"`
+	PreferredContactID   *string `json:"preferred_contact_id,omitempty"`
+	PreferredContactName *string `json:"preferred_contact_name,omitempty"`
+	IncludeDailySchedule bool    `json:"include_daily_schedule"`
+}
+
+type VoicePreferencesUpdates struct {
+	ReminderStyle        *string  `json:"reminder_style"`
+	SpeechRate           *float64 `json:"speech_rate"`
+	PreferredContactID   *string  `json:"preferred_contact_id"`
+	IncludeDailySchedule *bool    `json:"include_daily_schedule"`
 }
 
 type Service struct {
@@ -118,6 +134,68 @@ func (s *Service) Update(ctx context.Context, userID string, updates Updates) (*
 	return s.GetByID(ctx, userID)
 }
 
+func (s *Service) GetVoicePreferences(ctx context.Context, userID string) (*VoicePreferences, error) {
+	preferences := &VoicePreferences{}
+	err := s.db.QueryRowContext(ctx, `
+		SELECT p.reminder_style, p.speech_rate, p.preferred_contact_id::text,
+		       COALESCE(c.nickname, c.full_name), p.include_daily_schedule
+		FROM voice_preferences p
+		LEFT JOIN contacts c ON c.id=p.preferred_contact_id AND c.elder_id=p.user_id
+		WHERE p.user_id=$1`, userID,
+	).Scan(
+		&preferences.ReminderStyle, &preferences.SpeechRate,
+		&preferences.PreferredContactID, &preferences.PreferredContactName,
+		&preferences.IncludeDailySchedule,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return &VoicePreferences{ReminderStyle: "GENTLE", SpeechRate: 0.85, IncludeDailySchedule: true}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get voice preferences: %w", err)
+	}
+	return preferences, nil
+}
+
+func (s *Service) UpdateVoicePreferences(
+	ctx context.Context, userID string, updates VoicePreferencesUpdates,
+) (*VoicePreferences, error) {
+	if updates.ReminderStyle != nil {
+		style := strings.ToUpper(strings.TrimSpace(*updates.ReminderStyle))
+		if style != "GENTLE" && style != "DIRECT" {
+			return nil, ErrInvalidVoicePreferences
+		}
+		updates.ReminderStyle = &style
+	}
+	if updates.SpeechRate != nil && (*updates.SpeechRate < 0.5 || *updates.SpeechRate > 1.5) {
+		return nil, ErrInvalidVoicePreferences
+	}
+	if updates.PreferredContactID != nil && strings.TrimSpace(*updates.PreferredContactID) != "" {
+		var belongsToUser bool
+		if err := s.db.QueryRowContext(ctx,
+			`SELECT EXISTS(SELECT 1 FROM contacts WHERE id=$1 AND elder_id=$2)`,
+			*updates.PreferredContactID, userID,
+		).Scan(&belongsToUser); err != nil || !belongsToUser {
+			return nil, ErrInvalidVoicePreferences
+		}
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO voice_preferences(
+			user_id, reminder_style, speech_rate, preferred_contact_id, include_daily_schedule
+		) VALUES($1, COALESCE($2, 'GENTLE'), COALESCE($3, 0.85), NULLIF($4, '')::uuid, COALESCE($5, TRUE))
+		ON CONFLICT(user_id) DO UPDATE SET
+			reminder_style=COALESCE($2, voice_preferences.reminder_style),
+			speech_rate=COALESCE($3, voice_preferences.speech_rate),
+			preferred_contact_id=CASE WHEN $4 IS NULL THEN voice_preferences.preferred_contact_id ELSE NULLIF($4, '')::uuid END,
+			include_daily_schedule=COALESCE($5, voice_preferences.include_daily_schedule),
+			updated_at=NOW()`,
+		userID, updates.ReminderStyle, updates.SpeechRate, updates.PreferredContactID, updates.IncludeDailySchedule,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("update voice preferences: %w", err)
+	}
+	return s.GetVoicePreferences(ctx, userID)
+}
+
 func (s *Service) GetEldersForCaregiver(ctx context.Context, caregiverID string) ([]Profile, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT elder_id::text FROM caregiver_elder_links
@@ -126,7 +204,10 @@ func (s *Service) GetEldersForCaregiver(ctx context.Context, caregiverID string)
 		return nil, fmt.Errorf("list elders: %w", err)
 	}
 	defer rows.Close()
-	var profiles []Profile
+	// A caregiver without a linked elder is a normal onboarding state. Return
+	// an empty JSON array rather than null so Android can deserialize it as a
+	// non-null List<UserDto>.
+	profiles := make([]Profile, 0)
 	for rows.Next() {
 		var elderID string
 		if err := rows.Scan(&elderID); err != nil {

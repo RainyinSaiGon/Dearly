@@ -15,6 +15,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Medication
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -40,6 +42,7 @@ private val ActivityMuted = Color(0xFF7D8B90)
 fun CaregiverActivityScreen(
     medicationLogs: List<MedicationLog> = emptyList(),
     contactsCount: Int = 0,
+    hasLinkedElder: Boolean = true,
     busy: Boolean = false,
     error: String? = null,
     onOpenCalls: () -> Unit = {},
@@ -50,12 +53,19 @@ fun CaregiverActivityScreen(
     Column(Modifier.fillMaxSize().background(Color(0xFFFCFCF9))) {
         CaregiverHeader()
         ElderSummary(contactsCount, completed, medicationLogs.size)
-        ActivityContent(
-            logs = medicationLogs,
-            busy = busy,
-            error = error,
-            modifier = Modifier.weight(1f)
-        )
+        if (hasLinkedElder) {
+            ActivityContent(
+                logs = medicationLogs,
+                busy = busy,
+                error = error,
+                modifier = Modifier.weight(1f)
+            )
+        } else {
+            LinkElderPrompt(
+                modifier = Modifier.weight(1f),
+                onOpenSettings = onOpenSettings
+            )
+        }
         CaregiverBottomNavigation(
             selectedTab = CaregiverTab.ACTIVITY,
             onTabSelected = {
@@ -64,6 +74,36 @@ fun CaregiverActivityScreen(
                 if (it == CaregiverTab.SETTINGS) onOpenSettings()
             }
         )
+    }
+}
+
+@Composable
+private fun LinkElderPrompt(modifier: Modifier, onOpenSettings: () -> Unit) {
+    Column(
+        modifier = modifier.fillMaxWidth().padding(horizontal = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(Icons.Outlined.Medication, null, tint = ActivityMuted)
+        Text(
+            "Chưa kết nối người được chăm sóc",
+            color = ActivityForest,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(top = 12.dp)
+        )
+        Text(
+            "Vào Cài đặt để nhập mã kết nối.",
+            color = ActivityMuted,
+            fontSize = 13.sp,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+        Button(
+            onClick = onOpenSettings,
+            modifier = Modifier.padding(top = 18.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = ActivityForest)
+        ) {
+            Text("Mở Cài đặt")
+        }
     }
 }
 

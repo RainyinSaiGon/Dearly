@@ -23,7 +23,7 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 
 type sessionRequest struct {
 	FirebaseIDToken string `json:"firebase_id_token" binding:"required"`
-	Role            string `json:"role" binding:"required"`
+	Role            string `json:"role"`
 }
 
 func (h *Handler) CreateSession(c *gin.Context) {
@@ -38,6 +38,8 @@ func (h *Handler) CreateSession(c *gin.Context) {
 		code := "session_failed"
 		if errors.Is(err, ErrInvalidRole) {
 			status, code = http.StatusBadRequest, "invalid_role"
+		} else if errors.Is(err, ErrRoleSelectionRequired) {
+			status, code = http.StatusConflict, "role_selection_required"
 		} else if errors.Is(err, ErrInvalidToken) {
 			status, code = http.StatusUnauthorized, "invalid_firebase_token"
 		}

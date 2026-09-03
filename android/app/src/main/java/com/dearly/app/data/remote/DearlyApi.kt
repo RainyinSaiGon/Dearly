@@ -78,6 +78,10 @@ interface DearlyApi {
     suspend fun queryVoice(@Part audio: MultipartBody.Part): VoiceQueryDto
 
     @Multipart
+    @POST("public/voice/query")
+    suspend fun queryPublicVoice(@Part audio: MultipartBody.Part): VoiceQueryDto
+
+    @Multipart
     @POST("voice/verify")
     suspend fun verifyVoice(
         @Part audio: MultipartBody.Part,

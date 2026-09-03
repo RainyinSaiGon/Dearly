@@ -1,4 +1,6 @@
 import json
+import subprocess
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -6,7 +8,9 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.models.ecapa import EcapaTDNN, InvalidEmbeddingError
 from app.routers import enroll, identify, query, verify
-from app.services.llm import LLMService
+from app.services.asr import NoSpeechDetectedError
+from app.services import audio as audio_service
+from app.services.llm import LLMService, safe_display_transcript
 from train.eval import compute_metrics, compute_top1_accuracy, generate_trials
 
 client = TestClient(app)
@@ -45,6 +49,7 @@ def fake_model(monkeypatch):
     monkeypatch.setattr(verify, "model_provider", lambda: model)
     monkeypatch.setattr(identify, "model_provider", lambda: model)
     monkeypatch.setattr(query, "model_provider", lambda: model)
+    monkeypatch.setattr(enroll, "asr_provider", lambda: FakeASR())
     return model
 
 
@@ -57,6 +62,39 @@ def test_enrollment_returns_embedding(fake_model):
 
     assert response.status_code == 200
     assert response.json() == {"phrase_index": 2, "embedding": [1.0, 0.0]}
+
+
+def test_enrollment_normalizes_android_m4a(fake_model, monkeypatch):
+    def fake_ffmpeg(command, **_kwargs):
+        Path(command[-1]).write_bytes(b"normalized wav")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(audio_service.subprocess, "run", fake_ffmpeg)
+
+    response = client.post(
+        "/enroll/",
+        files={"audio": ("phrase.m4a", b"android-aac", "audio/mp4")},
+        data={"phrase_index": "0"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["phrase_index"] == 0
+
+
+def test_enrollment_rejects_recording_without_intelligible_speech(fake_model, monkeypatch):
+    class SilentASR:
+        async def transcribe(self, _path):
+            raise NoSpeechDetectedError("no intelligible speech was detected")
+
+    monkeypatch.setattr(enroll, "asr_provider", lambda: SilentASR())
+
+    response = client.post(
+        "/enroll/",
+        files={"audio": ("phrase.wav", b"noise", "audio/wav")},
+        data={"phrase_index": "2"},
+    )
+
+    assert response.status_code == 422
 
 
 def test_verification_and_identification(fake_model):
@@ -102,6 +140,7 @@ def test_query_runs_full_non_authoritative_pipeline(fake_model, monkeypatch):
     assert body["identified_user_id"] == "elder-1"
     assert body["response_text"] == "Bác vui lòng xác minh giọng nói."
     assert "response_audio_base64" not in body
+    assert body["raw_transcript"]
 @pytest.mark.asyncio
 async def test_local_intent_policy_cannot_be_weakened_by_missing_openai(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -110,6 +149,13 @@ async def test_local_intent_policy_cannot_be_weakened_by_missing_openai(monkeypa
 
     assert result["intent"] == "MARK_TAKEN"
     assert result["requires_sv"] is True
+
+
+def test_corrected_transcript_cannot_be_translated():
+    raw = "A lô một hai ba bốn"
+
+    assert safe_display_transcript(raw, "안녕하세요, 저는 orang z polity Esperncion.") == raw
+    assert safe_display_transcript("hom nay may gio", "Hôm nay mấy giờ?") == "Hôm nay mấy giờ?"
 
 
 def test_embedding_and_evaluation_math():

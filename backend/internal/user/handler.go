@@ -17,10 +17,39 @@ func NewHandler(service *Service) *Handler { return &Handler{service: service} }
 func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("/me", h.GetMe)
 	rg.PUT("/me", h.UpdateMe)
+	rg.GET("/me/voice-preferences", h.GetVoicePreferences)
+	rg.PUT("/me/voice-preferences", h.UpdateVoicePreferences)
 	rg.GET("/me/elders", h.GetElders)
 	rg.POST("/me/link-code", h.CreateLinkCode)
 	rg.POST("/me/elders", h.LinkElder)
 	rg.DELETE("/me/elders/:elderID", h.UnlinkElder)
+}
+
+func (h *Handler) GetVoicePreferences(c *gin.Context) {
+	preferences, err := h.service.GetVoicePreferences(c.Request.Context(), auth.UserID(c))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "voice_preferences_read_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, preferences)
+}
+
+func (h *Handler) UpdateVoicePreferences(c *gin.Context) {
+	var updates VoicePreferencesUpdates
+	if err := c.ShouldBindJSON(&updates); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_voice_preferences"})
+		return
+	}
+	preferences, err := h.service.UpdateVoicePreferences(c.Request.Context(), auth.UserID(c), updates)
+	if err != nil {
+		if errors.Is(err, ErrInvalidVoicePreferences) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_voice_preferences"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "voice_preferences_update_failed"})
+		return
+	}
+	c.JSON(http.StatusOK, preferences)
 }
 
 func (h *Handler) CreateLinkCode(c *gin.Context) {

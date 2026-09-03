@@ -24,15 +24,29 @@ import (
 )
 
 var (
-	ErrInvalidIntent = errors.New("intent is not protected by speaker verification")
-	ErrInvalidGrant  = errors.New("voice verification grant is invalid or expired")
+	ErrInvalidIntent           = errors.New("intent is not protected by speaker verification")
+	ErrInvalidGrant            = errors.New("voice verification grant is invalid or expired")
+	ErrVerificationRateLimited = errors.New("too many failed voice verification attempts")
+	ErrVoiceReplayDetected     = errors.New("this recording was already used for verification")
 )
 
+type AIServiceError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *AIServiceError) Error() string {
+	return fmt.Sprintf("AI service returned %d: %s", e.StatusCode, e.Message)
+}
+
 const (
-	IntentCallContact   = "CALL_CONTACT"
-	IntentMarkTaken     = "MARK_TAKEN"
-	IntentUpdateSetting = "UPDATE_SETTINGS"
-	grantLifetime       = 2 * time.Minute
+	IntentCallContact      = "CALL_CONTACT"
+	IntentMarkTaken        = "MARK_TAKEN"
+	IntentUpdateSetting    = "UPDATE_SETTINGS"
+	grantLifetime          = 2 * time.Minute
+	verificationWindow     = 15 * time.Minute
+	replayWindow           = 24 * time.Hour
+	maxFailedVerifications = 5
 )
 
 var protectedIntents = map[string]struct{}{
@@ -46,6 +60,22 @@ type VerificationResult struct {
 	Score             float64 `json:"score"`
 	VerificationGrant string  `json:"verification_grant,omitempty"`
 	ExpiresIn         int64   `json:"expires_in,omitempty"`
+}
+
+type VerificationAuditEntry struct {
+	Intent    string    `json:"intent"`
+	Outcome   string    `json:"outcome"`
+	Score     *float64  `json:"score,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// VoicePersonalization is returned only after SID has been constrained to the
+// signed-in user's caregiver/elder group and re-authorized by PostgreSQL.
+type VoicePersonalization struct {
+	ReminderStyle        string  `json:"reminder_style"`
+	SpeechRate           float64 `json:"speech_rate"`
+	PreferredContactName *string `json:"preferred_contact_name,omitempty"`
+	IncludeDailySchedule bool    `json:"include_daily_schedule"`
 }
 
 type enrolledSpeaker struct {
@@ -186,6 +216,10 @@ func (s *Service) Verify(ctx context.Context, userID, intent, filename string, a
 	if _, allowed := protectedIntents[intent]; !allowed {
 		return nil, ErrInvalidIntent
 	}
+	audioHash := hashAudio(audioBytes)
+	if err := s.checkVerificationProtection(ctx, userID, intent, audioHash); err != nil {
+		return nil, err
+	}
 	var encoded []byte
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT embedding_vector FROM voice_enrollments WHERE user_id=$1 AND phrase_index=-1`,
@@ -210,6 +244,7 @@ func (s *Service) Verify(ctx context.Context, userID, intent, filename string, a
 		return nil, err
 	}
 	verification := &VerificationResult{Passed: result.Passed, Score: result.Score}
+	outcome := "FAILED"
 	if result.Passed {
 		grant, err := s.issueVerificationGrant(ctx, userID, intent)
 		if err != nil {
@@ -217,11 +252,88 @@ func (s *Service) Verify(ctx context.Context, userID, intent, filename string, a
 		}
 		verification.VerificationGrant = grant
 		verification.ExpiresIn = int64(grantLifetime.Seconds())
+		outcome = "PASSED"
+	}
+	if err := s.recordVerificationAttempt(ctx, userID, intent, outcome, &result.Score, audioHash); err != nil {
+		return nil, err
 	}
 	_ = s.events.Publish(ctx, "voice.verification.completed", userID, map[string]any{
 		"intent": intent, "passed": result.Passed, "score": result.Score,
 	})
 	return verification, nil
+}
+
+func (s *Service) VerificationAudit(ctx context.Context, userID string, limit int) ([]VerificationAuditEntry, error) {
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT intent, outcome, score, created_at
+		FROM voice_verification_attempts
+		WHERE user_id=$1
+		ORDER BY created_at DESC
+		LIMIT $2`, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("load voice verification audit: %w", err)
+	}
+	defer rows.Close()
+	entries := make([]VerificationAuditEntry, 0)
+	for rows.Next() {
+		var entry VerificationAuditEntry
+		var score sql.NullFloat64
+		if err := rows.Scan(&entry.Intent, &entry.Outcome, &score, &entry.CreatedAt); err != nil {
+			return nil, err
+		}
+		if score.Valid {
+			value := score.Float64
+			entry.Score = &value
+		}
+		entries = append(entries, entry)
+	}
+	return entries, rows.Err()
+}
+
+func (s *Service) checkVerificationProtection(ctx context.Context, userID, intent, audioHash string) error {
+	var failures int
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM voice_verification_attempts
+		WHERE user_id=$1 AND intent=$2 AND outcome IN ('FAILED','REPLAY_BLOCKED')
+		  AND created_at > NOW()-($3 * INTERVAL '1 second')`,
+		userID, intent, verificationWindow.Seconds(),
+	).Scan(&failures); err != nil {
+		return fmt.Errorf("check verification rate limit: %w", err)
+	}
+	if failures >= maxFailedVerifications {
+		_ = s.recordVerificationAttempt(ctx, userID, intent, "RATE_LIMITED", nil, audioHash)
+		return ErrVerificationRateLimited
+	}
+	var replayed bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM voice_verification_attempts
+			WHERE user_id=$1 AND intent=$2 AND audio_hash=$3 AND outcome='PASSED'
+			  AND created_at > NOW()-($4 * INTERVAL '1 second')
+		)`, userID, intent, audioHash, replayWindow.Seconds(),
+	).Scan(&replayed); err != nil {
+		return fmt.Errorf("check verification replay: %w", err)
+	}
+	if replayed {
+		_ = s.recordVerificationAttempt(ctx, userID, intent, "REPLAY_BLOCKED", nil, audioHash)
+		return ErrVoiceReplayDetected
+	}
+	return nil
+}
+
+func (s *Service) recordVerificationAttempt(
+	ctx context.Context, userID, intent, outcome string, score *float64, audioHash string,
+) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO voice_verification_attempts(user_id, intent, outcome, score, audio_hash)
+		VALUES($1,$2,$3,$4,$5)`, userID, intent, outcome, score, audioHash)
+	if err != nil {
+		return fmt.Errorf("record voice verification attempt: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) Query(ctx context.Context, userID, filename string, audioBytes []byte) (map[string]interface{}, error) {
@@ -249,6 +361,37 @@ func (s *Service) Query(ctx context.Context, userID, filename string, audioBytes
 	_ = s.events.Publish(ctx, "voice.query.completed", userID, map[string]any{
 		"intent": result["intent"], "sv_required": result["sv_required"], "sv_passed": result["sv_passed"],
 	})
+	return result, nil
+}
+
+// PublicQuery is intentionally limited to information that is safe before a
+// user signs in. It never loads a profile, enrollment, medication, or contact.
+func (s *Service) PublicQuery(ctx context.Context, filename string, audioBytes []byte) (map[string]interface{}, error) {
+	response, err := s.multipart(ctx, "/query/", filename, audioBytes, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(response, &result); err != nil {
+		return nil, err
+	}
+	intent, _ := result["intent"].(string)
+	result["intent"] = normalizeIntent(intent)
+	result["sv_required"] = false
+	result["sv_passed"] = nil
+	result["identified_user_id"] = nil
+	result["identification_score"] = 0.0
+	switch normalizeIntent(intent) {
+	case "ASK_TIME":
+		result["response_text"] = vietnameseTimeResponse(time.Now().In(s.location))
+	case "ASK_DATE":
+		result["response_text"] = vietnameseDateResponse(time.Now().In(s.location))
+	case "GREETING":
+		result["response_text"] = "Chào bác. Dearly có thể cho bác biết giờ hoặc ngày hôm nay."
+	default:
+		result["intent"] = "PUBLIC_HELP"
+		result["response_text"] = "Bác có thể hỏi Dearly bây giờ là mấy giờ hoặc hôm nay là ngày mấy nhé."
+	}
 	return result, nil
 }
 
@@ -311,39 +454,106 @@ func (s *Service) enrolledSpeakers(ctx context.Context, userID string) ([]enroll
 
 func (s *Service) enrichQueryResponse(ctx context.Context, userID string, result map[string]interface{}) error {
 	intent, _ := result["intent"].(string)
+	identifiedUserID, _ := result["identified_user_id"].(string)
+	recognizedName := ""
+	medicationOwnerID := userID
+	var personalization *VoicePersonalization
+	if identifiedUserID != "" {
+		name, err := s.recognizedSpeakerName(ctx, identifiedUserID, userID)
+		if err != nil {
+			if !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
+		} else {
+			recognizedName = name
+			medicationOwnerID = identifiedUserID
+			result["recognized_user_name"] = name
+			preferences, preferenceErr := s.voicePersonalization(ctx, identifiedUserID)
+			if preferenceErr != nil {
+				return preferenceErr
+			}
+			personalization = preferences
+			result["personalization"] = preferences
+		}
+	}
 	switch normalizeIntent(intent) {
 	case "ASK_TIME":
 		result["response_text"] = vietnameseTimeResponse(time.Now().In(s.location))
 	case "ASK_DATE":
 		result["response_text"] = vietnameseDateResponse(time.Now().In(s.location))
 	case "CHECK_MEDICATIONS":
-		response, err := s.medicationScheduleResponse(ctx, userID)
+		response, err := s.medicationScheduleResponse(ctx, medicationOwnerID)
 		if err != nil {
 			return err
+		}
+		if personalization != nil {
+			response = personalizedScheduleResponse(response, personalization)
 		}
 		result["response_text"] = response
 	}
 
-	identifiedUserID, _ := result["identified_user_id"].(string)
-	if identifiedUserID == "" {
-		return nil
+	if response, ok := result["response_text"].(string); ok && strings.TrimSpace(response) != "" && recognizedName != "" {
+		result["response_text"] = personalizedGreeting(recognizedName, response, personalization)
 	}
+	return nil
+}
+
+func (s *Service) voicePersonalization(ctx context.Context, userID string) (*VoicePersonalization, error) {
+	preferences := &VoicePersonalization{ReminderStyle: "GENTLE", SpeechRate: 0.85, IncludeDailySchedule: true}
+	err := s.db.QueryRowContext(ctx, `
+		SELECT p.reminder_style, p.speech_rate, COALESCE(c.nickname, c.full_name),
+		       p.include_daily_schedule
+		FROM voice_preferences p
+		LEFT JOIN contacts c ON c.id=p.preferred_contact_id AND c.elder_id=p.user_id
+		WHERE p.user_id=$1`, userID,
+	).Scan(
+		&preferences.ReminderStyle, &preferences.SpeechRate,
+		&preferences.PreferredContactName, &preferences.IncludeDailySchedule,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return preferences, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load voice personalization: %w", err)
+	}
+	return preferences, nil
+}
+
+func personalizedGreeting(name, response string, preferences *VoicePersonalization) string {
+	if preferences != nil && preferences.ReminderStyle == "DIRECT" {
+		return fmt.Sprintf("%s, %s", name, response)
+	}
+	return fmt.Sprintf("Chào %s. %s", name, response)
+}
+
+func personalizedScheduleResponse(response string, preferences *VoicePersonalization) string {
+	if !preferences.IncludeDailySchedule {
+		return response
+	}
+	prefix := "Nhắc nhẹ: "
+	if preferences.ReminderStyle == "DIRECT" {
+		prefix = "Lịch cần thực hiện: "
+	}
+	if preferences.PreferredContactName == nil || strings.TrimSpace(*preferences.PreferredContactName) == "" {
+		return prefix + response
+	}
+	return fmt.Sprintf("%s%s Khi cần hỗ trợ, Dearly sẽ ưu tiên liên hệ %s.",
+		prefix, response, *preferences.PreferredContactName)
+}
+
+func (s *Service) recognizedSpeakerName(ctx context.Context, identifiedUserID, requestUserID string) (string, error) {
 	var name string
-	if err := s.db.QueryRowContext(ctx, recognizedSpeakerNameQuery, identifiedUserID, userID).Scan(&name); err != nil {
+	if err := s.db.QueryRowContext(ctx, recognizedSpeakerNameQuery, identifiedUserID, requestUserID).Scan(&name); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil
+			return "", err
 		}
-		return fmt.Errorf("load identified speaker: %w", err)
+		return "", fmt.Errorf("load identified speaker: %w", err)
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return nil
+		return "", sql.ErrNoRows
 	}
-	result["recognized_user_name"] = name
-	if response, ok := result["response_text"].(string); ok && strings.TrimSpace(response) != "" {
-		result["response_text"] = fmt.Sprintf("Chào %s. %s", name, response)
-	}
-	return nil
+	return name, nil
 }
 
 func (s *Service) medicationScheduleResponse(ctx context.Context, elderID string) (string, error) {
@@ -409,6 +619,11 @@ func hashGrant(grant string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func hashAudio(audio []byte) string {
+	sum := sha256.Sum256(audio)
+	return hex.EncodeToString(sum[:])
+}
+
 func (s *Service) Reset(ctx context.Context, userID string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM voice_enrollments WHERE user_id=$1`, userID)
 	return err
@@ -450,7 +665,7 @@ func (s *Service) multipart(ctx context.Context, path, filename string, audio []
 		return nil, err
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, fmt.Errorf("AI service returned %d: %s", response.StatusCode, string(responseBody))
+		return nil, &AIServiceError{StatusCode: response.StatusCode, Message: string(responseBody)}
 	}
 	return responseBody, nil
 }

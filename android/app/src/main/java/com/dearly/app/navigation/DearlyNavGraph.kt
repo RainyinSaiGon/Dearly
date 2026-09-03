@@ -3,7 +3,6 @@ package com.dearly.app.navigation
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import android.telephony.PhoneNumberUtils
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -23,6 +22,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.dearly.app.ui.auth.OnboardingScreen
 import com.dearly.app.ui.auth.OtpVerificationScreen
+import com.dearly.app.ui.auth.PublicAssistantScreen
 import com.dearly.app.ui.auth.SignInScreen
 import com.dearly.app.ui.auth.RoleSelectionScreen
 import com.dearly.app.ui.auth.SignUpScreen
@@ -37,6 +37,7 @@ import com.dearly.app.ui.elder.ElderCallingScreen
 import com.dearly.app.ui.elder.ElderMedicationScreen
 import com.dearly.app.ui.elder.ElderSettingScreen
 import com.dearly.app.ui.DearlyViewModel
+import com.dearly.app.domain.PhoneNumberNormalizer
 import com.dearly.app.domain.model.UserRole
 import com.dearly.app.R
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -61,17 +62,43 @@ fun DearlyNavGraph(
     val contacts by viewModel.contacts.collectAsState()
     val medications by viewModel.medications.collectAsState()
     val medicationLogs by viewModel.medicationLogs.collectAsState()
+    val linkedElders by viewModel.linkedElders.collectAsState()
     val context = LocalContext.current
     val activity = context.findActivity()
     val firebaseAuth = remember { FirebaseAuth.getInstance() }
     var authenticationBusy by remember { mutableStateOf(false) }
     var authenticationError by remember { mutableStateOf<String?>(null) }
     var pendingDisplayName by remember { mutableStateOf("") }
-    val authenticatedDestination = {
-        authenticationBusy = false
-        navController.navigate(Screen.RoleSelection.route) {
-            popUpTo(Screen.PhoneAuth.route) { inclusive = true }
+    var pendingE164PhoneNumber by remember { mutableStateOf<String?>(null) }
+    var forceResendingToken by remember { mutableStateOf<PhoneAuthProvider.ForceResendingToken?>(null) }
+    val navigateToHome: (UserRole) -> Unit = { role ->
+        val destination = if (role == UserRole.CAREGIVER) {
+            Screen.CaregiverActivity.route
+        } else {
+            Screen.ElderCalls.route
         }
+        navController.navigate(destination) {
+            popUpTo(Screen.PublicAssistant.route) { inclusive = true }
+        }
+    }
+    val authenticatedDestination = {
+        authenticationBusy = true
+        viewModel.resumeBackendSession(
+            onExistingAccount = { role ->
+                authenticationBusy = false
+                navigateToHome(role)
+            },
+            onRoleSelectionRequired = {
+                authenticationBusy = false
+                navController.navigate(Screen.RoleSelection.route) {
+                    popUpTo(Screen.PublicAssistant.route) { inclusive = true }
+                }
+            },
+            onFailure = {
+                authenticationBusy = false
+                authenticationError = "Không thể mở tài khoản lúc này. Bác hãy thử lại nhé."
+            }
+        )
     }
     val signInWithCredential: (PhoneAuthCredential) -> Unit = { credential ->
         authenticationBusy = true
@@ -119,11 +146,12 @@ fun DearlyNavGraph(
             .build()
         googleLauncher.launch(GoogleSignIn.getClient(context, options).signInIntent)
     }
-    val startPhoneSignIn: (String) -> Unit = phone@{ phoneNumber ->
+    val requestPhoneVerification: (String, PhoneAuthProvider.ForceResendingToken?, Boolean) -> Unit = request@{
+            e164PhoneNumber, resendToken, navigateToOtp ->
         authenticationError = null
-        if (activity == null || !PhoneNumberUtils.isGlobalPhoneNumber(phoneNumber)) {
-            authenticationError = "Hãy nhập số quốc tế hợp lệ, ví dụ +84912345678."
-            return@phone
+        if (activity == null) {
+            authenticationError = "Hãy nhập số điện thoại Việt Nam hợp lệ, ví dụ 0818916621."
+            return@request
         }
         authenticationBusy = true
         val callbacks = object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
@@ -141,17 +169,46 @@ fun DearlyNavGraph(
                 token: PhoneAuthProvider.ForceResendingToken
             ) {
                 authenticationBusy = false
-                navController.navigate(Screen.OtpVerification.createRoute(verificationId))
+                pendingE164PhoneNumber = e164PhoneNumber
+                forceResendingToken = token
+                if (navigateToOtp) {
+                    navController.navigate(Screen.OtpVerification.createRoute(verificationId))
+                }
+            }
+
+            override fun onCodeAutoRetrievalTimeOut(verificationId: String) {
+                authenticationBusy = false
+                authenticationError = "Chưa nhận được mã OTP. Hãy kiểm tra tin nhắn rồi thử gửi lại mã."
             }
         }
+        val options = PhoneAuthOptions.newBuilder(firebaseAuth)
+            .setPhoneNumber(e164PhoneNumber)
+            .setTimeout(60L, TimeUnit.SECONDS)
+            .setActivity(activity)
+            .setCallbacks(callbacks)
+        if (resendToken != null) {
+            options.setForceResendingToken(resendToken)
+        }
         PhoneAuthProvider.verifyPhoneNumber(
-            PhoneAuthOptions.newBuilder(firebaseAuth)
-                .setPhoneNumber(phoneNumber)
-                .setTimeout(60L, TimeUnit.SECONDS)
-                .setActivity(activity)
-                .setCallbacks(callbacks)
-                .build()
+            options.build()
         )
+    }
+    val startPhoneSignIn: (String) -> Unit = phone@{ phoneNumber ->
+        val e164PhoneNumber = PhoneNumberNormalizer.toE164(phoneNumber)
+        if (e164PhoneNumber == null) {
+            authenticationError = "Hãy nhập số điện thoại Việt Nam hợp lệ, ví dụ 0818916621."
+            return@phone
+        }
+        requestPhoneVerification(e164PhoneNumber, null, true)
+    }
+    val resendPhoneVerification = {
+        val e164PhoneNumber = pendingE164PhoneNumber
+        val resendToken = forceResendingToken
+        if (e164PhoneNumber == null || resendToken == null) {
+            authenticationError = "Không thể gửi lại mã. Hãy quay lại và thử lại."
+        } else {
+            requestPhoneVerification(e164PhoneNumber, resendToken, false)
+        }
     }
     val resolvedStartDestination = if (startDestination == Screen.Onboarding.route) {
         when (uiState.sessionRole) {
@@ -169,7 +226,7 @@ fun DearlyNavGraph(
         composable(Screen.Onboarding.route) {
             OnboardingScreen(
                 onFinished = {
-                    navController.navigate(Screen.PhoneAuth.route) {
+                    navController.navigate(Screen.PublicAssistant.route) {
                         popUpTo(Screen.Onboarding.route) { inclusive = true }
                     }
                 }
@@ -186,6 +243,19 @@ fun DearlyNavGraph(
                 busy = authenticationBusy,
                 error = authenticationError,
                 onSignUp = { navController.navigate(Screen.SignUp.route) }
+            )
+        }
+
+        composable(Screen.PublicAssistant.route) {
+            LaunchedEffect(Unit) { viewModel.beginVoiceCapture() }
+            PublicAssistantScreen(
+                busy = uiState.busy,
+                transcript = uiState.voiceTranscript,
+                response = uiState.voiceMessage,
+                error = uiState.error,
+                onAudioReady = viewModel::queryPublicVoice,
+                onVoiceCaptureStarted = viewModel::beginVoiceCapture,
+                onSignIn = { navController.navigate(Screen.PhoneAuth.route) }
             )
         }
 
@@ -211,6 +281,7 @@ fun DearlyNavGraph(
             OtpVerificationScreen(
                 busy = authenticationBusy,
                 error = authenticationError,
+                onResend = resendPhoneVerification,
                 onContinue = { code ->
                     if (verificationId.isBlank()) {
                         authenticationError = "Phiên xác thực đã hết hạn."
@@ -281,6 +352,7 @@ fun DearlyNavGraph(
             CaregiverActivityScreen(
                 medicationLogs = medicationLogs,
                 contactsCount = contacts.size,
+                hasLinkedElder = uiState.elderId != null,
                 busy = uiState.busy,
                 error = uiState.error,
                 onOpenCalls = { navController.navigate(Screen.CaregiverCalls.route) },
@@ -325,7 +397,7 @@ fun DearlyNavGraph(
                 onOpenMedications = { navController.navigate(Screen.CaregiverMedications.route) },
                 onLogout = {
                     viewModel.signOut {
-                        navController.navigate(Screen.PhoneAuth.route) {
+                        navController.navigate(Screen.PublicAssistant.route) {
                             popUpTo(navController.graph.startDestinationId) { inclusive = true }
                         }
                     }
@@ -340,8 +412,10 @@ fun DearlyNavGraph(
                 linkBusy = uiState.busy,
                 linkError = uiState.error,
                 linkMessage = uiState.linkMessage,
+                linkedElders = linkedElders,
                 onGenerateLinkCode = viewModel::generateElderLinkCode,
-                onLinkElder = viewModel::linkElder
+                onLinkElder = viewModel::linkElder,
+                onUnlinkElder = viewModel::unlinkElder
             )
         }
         composable(Screen.ElderCalls.route) {
@@ -349,8 +423,12 @@ fun DearlyNavGraph(
                 busy = uiState.busy,
                 transcript = uiState.voiceTranscript,
                 response = uiState.voiceMessage,
+                personalization = uiState.voicePersonalization,
                 error = uiState.error,
+                requiresVerification = uiState.voiceRequiresVerification,
                 onVoiceAudio = viewModel::queryVoice,
+                onVerificationAudio = viewModel::verifySpokenMedication,
+                onVoiceCaptureStarted = viewModel::beginVoiceCapture,
                 onOpenMedications = { navController.navigate(Screen.ElderMedications.route) },
                 onOpenSettings = { navController.navigate(Screen.ElderSettings.route) }
             )
@@ -374,7 +452,7 @@ fun DearlyNavGraph(
                 onOpenMedications = { navController.navigate(Screen.ElderMedications.route) },
                 onLogout = {
                     viewModel.signOut {
-                        navController.navigate(Screen.PhoneAuth.route) {
+                        navController.navigate(Screen.PublicAssistant.route) {
                             popUpTo(navController.graph.startDestinationId) { inclusive = true }
                         }
                     }

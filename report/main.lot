@@ -1,7 +1,8 @@
 \babel@toc {english}{}\relax 
 \contentsline {table}{\numberline {1}{\ignorespaces Project group members.}}{5}{table.caption.1}%
 \contentsline {table}{\numberline {2}{\ignorespaces Task distribution and contribution.}}{5}{table.caption.2}%
-\contentsline {table}{\numberline {3}{\ignorespaces Dearly voice-assistant use cases and security controls.}}{6}{table.caption.3}%
-\contentsline {table}{\numberline {4}{\ignorespaces Speaker-disjoint VIVOS split used by the completed experiment.}}{8}{table.caption.5}%
-\contentsline {table}{\numberline {5}{\ignorespaces Fine-tuning configuration for the VIVOS ECAPA-TDNN experiment.}}{9}{table.caption.6}%
-\contentsline {table}{\numberline {6}{\ignorespaces Held-out VIVOS evaluation results.}}{10}{table.caption.7}%
+\contentsline {table}{\numberline {3}{\ignorespaces Dearly voice-assistant use cases and security controls.}}{7}{table.caption.3}%
+\contentsline {table}{\numberline {4}{\ignorespaces Speaker-disjoint VIVOS split used by the completed experiment.}}{9}{table.caption.5}%
+\contentsline {table}{\numberline {5}{\ignorespaces Fine-tuning configuration for the VIVOS ECAPA-TDNN experiment.}}{10}{table.caption.6}%
+\contentsline {table}{\numberline {6}{\ignorespaces Held-out VIVOS evaluation results.}}{11}{table.caption.7}%
+\contentsline {table}{\numberline {7}{\ignorespaces Information maintained for speaker verification and identification.}}{12}{table.caption.8}%

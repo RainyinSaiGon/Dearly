@@ -30,6 +30,15 @@ func TestGrantHashAndIntentNormalization(t *testing.T) {
 	}
 }
 
+func TestAudioHashIsStableAndDistinct(t *testing.T) {
+	if hashAudio([]byte("recording")) != hashAudio([]byte("recording")) {
+		t.Fatal("the same recording must have the same replay-protection hash")
+	}
+	if hashAudio([]byte("recording")) == hashAudio([]byte("different")) {
+		t.Fatal("different recordings must not share a replay-protection hash")
+	}
+}
+
 func TestGeneralVoiceResponsesContainLiveValues(t *testing.T) {
 	at := time.Date(2026, time.August, 30, 9, 5, 0, 0, time.UTC)
 
@@ -53,6 +62,26 @@ func TestMedicationScheduleResponseUsesStoredSchedule(t *testing.T) {
 	want := "Lịch thuốc hôm nay của bác: Vitamin D lúc 08:00, 20:00; Paracetamol."
 	if got != want {
 		t.Fatalf("unexpected schedule response: got %q, want %q", got, want)
+	}
+}
+
+func TestPersonalizedScheduleUsesStyleAndPreferredContact(t *testing.T) {
+	contact := "con Lan"
+	response := personalizedScheduleResponse(
+		"Lịch thuốc hôm nay của bác: Vitamin D lúc 08:00.",
+		&VoicePersonalization{
+			ReminderStyle: "GENTLE", PreferredContactName: &contact, IncludeDailySchedule: true,
+		},
+	)
+	for _, expected := range []string{"Nhắc nhẹ:", "Vitamin D", "con Lan"} {
+		if !strings.Contains(response, expected) {
+			t.Fatalf("personalized schedule %q does not contain %q", response, expected)
+		}
+	}
+
+	direct := personalizedScheduleResponse("Lịch thuốc.", &VoicePersonalization{ReminderStyle: "DIRECT", IncludeDailySchedule: true})
+	if !strings.HasPrefix(direct, "Lịch cần thực hiện:") {
+		t.Fatalf("expected direct reminder wording, got %q", direct)
 	}
 }
 

@@ -21,10 +21,23 @@ class VoiceRepository @Inject constructor(
         api.enrollVoice(audioPart(audio), phraseIndex.toString().textPart())
 
     suspend fun query(audio: File): SpokenVoiceQuery {
-        val query = api.queryVoice(audioPart(audio))
+        val query = queryRaw(audio)
         return SpokenVoiceQuery(
             query = query,
-            speechWarning = vietnameseTextToSpeech.speak(query.responseText)
+            speechWarning = speak(query.responseText)
+        )
+    }
+
+    suspend fun queryRaw(audio: File): VoiceQueryDto = api.queryVoice(audioPart(audio))
+
+    suspend fun speak(text: String, speechRate: Float? = null): String? =
+        vietnameseTextToSpeech.speak(text, speechRate)
+
+    suspend fun queryPublic(audio: File): SpokenVoiceQuery {
+        val query = api.queryPublicVoice(audioPart(audio))
+        return SpokenVoiceQuery(
+            query = query,
+            speechWarning = speak(query.responseText)
         )
     }
 

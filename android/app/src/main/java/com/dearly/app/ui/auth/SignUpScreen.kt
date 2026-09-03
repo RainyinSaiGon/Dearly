@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Person
@@ -44,6 +45,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -120,6 +122,11 @@ fun SignUpScreen(
             ) {
                 SignUpField(fullName, { fullName = it }, "Họ và tên", "Nhập họ và tên", Icons.Default.Person)
                 SignUpField(phoneNumber, { phoneNumber = it }, "Số điện thoại", "Nhập số điện thoại", Icons.Default.Phone)
+                Text(
+                    "Nhập số điện thoại, ví dụ 0818916621.",
+                    color = Color(0xFF6B7280),
+                    fontSize = 13.sp
+                )
                 error?.let { Text(it, color = Color(0xFFC62828), fontSize = 13.sp) }
 
                 Row(
@@ -235,6 +242,7 @@ private fun SignUpField(
             onValueChange = onValueChange,
             placeholder = { Text(placeholder, color = Color(0xFF6B7280), fontSize = 15.sp) },
             leadingIcon = { Icon(icon, null, tint = SignUpGreen, modifier = Modifier.size(21.dp)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
             singleLine = true,
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = RoundedCornerShape(8.dp)

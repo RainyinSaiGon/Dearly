@@ -4,6 +4,8 @@ import json
 import os
 import re
 import threading
+import unicodedata
+from difflib import SequenceMatcher
 from typing import Any
 
 PROTECTED_INTENTS = {"CALL_CONTACT", "MARK_TAKEN", "UPDATE_SETTINGS"}
@@ -16,10 +18,14 @@ KNOWN_INTENTS = PROTECTED_INTENTS | {
 }
 
 SYSTEM_PROMPT = """You classify Vietnamese elder-care voice requests.
-Return JSON with exactly: intent, entities, response_text.
+Return JSON with exactly: display_transcript, intent, entities, response_text.
 Allowed intents: ASK_TIME, ASK_DATE, CHECK_MEDICATIONS, CALL_CONTACT,
 MARK_TAKEN, UPDATE_SETTINGS, GREETING, UNKNOWN.
 Never claim an action was completed. Keep response_text short and respectful.
+For display_transcript, correct only obvious Vietnamese punctuation, capitalization,
+diacritics, and unambiguous speech-recognition spelling errors. Never invent, remove,
+or change the meaning of words; when uncertain, return the original wording. Never
+translate the transcript or replace it with words from another language.
 For CALL_CONTACT extract contact_name. For MARK_TAKEN extract medication_name when spoken."""
 
 
@@ -56,7 +62,12 @@ class LLMService:
         response_text = str(result.get("response_text", "")).strip()
         if not response_text:
             response_text = local_response(intent, entities)
+        display_transcript = safe_display_transcript(
+            transcript,
+            str(result.get("display_transcript", transcript)).strip(),
+        )
         return {
+            "display_transcript": display_transcript,
             "intent": intent,
             "entities": entities,
             "requires_sv": intent in PROTECTED_INTENTS,
@@ -83,6 +94,36 @@ class LLMService:
             return parsed if isinstance(parsed, dict) else None
         except Exception:
             return None
+
+
+def safe_display_transcript(transcript: str, candidate: str) -> str:
+    """Permit small Vietnamese corrections, but reject translations or rewrites."""
+    if not candidate or len(candidate) > len(transcript) * 2:
+        return transcript
+    if any(character.isalpha() and "LATIN" not in unicodedata.name(character, "") for character in candidate):
+        return transcript
+
+    original_words = _normalized_words(transcript)
+    candidate_words = _normalized_words(candidate)
+    if not original_words or not candidate_words:
+        return transcript
+    shared_words = set(original_words) & set(candidate_words)
+    similar_enough = SequenceMatcher(
+        None,
+        " ".join(original_words),
+        " ".join(candidate_words),
+    ).ratio() >= 0.7
+    if not shared_words and not similar_enough:
+        return transcript
+    if any(word.isdigit() and word not in candidate_words for word in original_words):
+        return transcript
+    return candidate
+
+
+def _normalized_words(value: str) -> list[str]:
+    normalized = unicodedata.normalize("NFD", value.casefold()).replace("đ", "d")
+    without_accents = "".join(character for character in normalized if not unicodedata.combining(character))
+    return re.findall(r"[a-z0-9]+", without_accents)
 
 
 def classify_locally(transcript: str) -> dict[str, Any]:
